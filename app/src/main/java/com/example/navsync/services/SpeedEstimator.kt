@@ -68,64 +68,80 @@ class SpeedEstimator {
         previousLocation = currentLocation
         previousTimestampMs = timestampMs
 
-        // Accuracy-Aware Displacement Threshold
-        val effectiveDisplacementThreshold = maxOf(
-            DISPLACEMENT_STATIONARY_BASE_METERS,
-            accuracyMeters * 0.25f
-        )
-
-        // Candidate Stationary Evaluation
-        val isCandidateStationary = (rawSpeedMps <= GPS_STATIONARY_SPEED_THRESHOLD_MPS) &&
-                (displacement <= effectiveDisplacementThreshold) &&
-                (derivedSpeedMps <= 0.6f || displacement <= 2.0f)
-
-        if (isCandidateStationary) {
-            stationaryCount++
-            movingCount = 0
-            if (stationaryCount >= STATIONARY_CONSECUTIVE_SAMPLES_REQUIRED) {
-                isConfirmedStationary = true
-            }
-        } else {
-            movingCount++
-            stationaryCount = 0
-            if (movingCount >= MOVING_CONSECUTIVE_SAMPLES_REQUIRED) {
-                isConfirmedStationary = false
-            }
-        }
-
         var displaySpeedKmh = 0.0f
         var filteredSpeedMps = 0.0f
 
-        if (isConfirmedStationary) {
-            // Stationary Phone Rule: Display EXACTLY 0 km/h
-            displaySpeedKmh = 0.0f
-            filteredSpeedMps = 0.0f
-            speedHistory.clear()
-            lastFilteredSpeedMps = 0.0f
-        } else {
-            // Legitimate Motion: Speed Filtering with Rolling Window & Exponential Smoothing
-            val currentEffectiveSpeed = if (rawSpeedMps > 0.2f) rawSpeedMps else derivedSpeedMps
-
-            speedHistory.add(currentEffectiveSpeed)
-            if (speedHistory.size > SPEED_ROLLING_WINDOW_SIZE) {
-                speedHistory.removeFirst()
-            }
-
-            val windowAvg = speedHistory.average().toFloat()
-
-            filteredSpeedMps = if (lastFilteredSpeedMps == 0.0f) {
-                windowAvg
-            } else {
-                (EMA_ALPHA * currentEffectiveSpeed) + ((1.0f - EMA_ALPHA) * lastFilteredSpeedMps)
-            }
-            lastFilteredSpeedMps = filteredSpeedMps
-
-            val rawKmh = filteredSpeedMps * 3.6f
-            displaySpeedKmh = (Math.round(rawKmh * 10.0f) / 10.0f)
-
-            // Prevent small residual float fraction below 0.5 km/h
-            if (displaySpeedKmh < 0.5f) {
+        // 1. Primary path: Use actual speed directly from GPS data (Doppler velocity)
+        if (rawSpeedMps >= 0f) {
+            // Speed deadband: under 0.85 m/s (~3.0 km/h) is stationary Doppler receiver noise.
+            // Even if speed reports up to 1.4 m/s, if displacement is under 2.5m, it is stationary jitter.
+            val isSpeedStationary = (rawSpeedMps <= 0.85f) || (rawSpeedMps <= 1.40f && displacement < 2.5f)
+            if (isSpeedStationary) {
+                stationaryCount++
+                movingCount = 0
+                isConfirmedStationary = true
                 displaySpeedKmh = 0.0f
+                filteredSpeedMps = 0.0f
+                speedHistory.clear()
+                lastFilteredSpeedMps = 0.0f
+            } else {
+                movingCount++
+                stationaryCount = 0
+
+                // Require at least 2 consecutive non-stationary samples to prevent one-off GPS spikes
+                if (movingCount < MOVING_CONSECUTIVE_SAMPLES_REQUIRED && isConfirmedStationary) {
+                    displaySpeedKmh = 0.0f
+                    filteredSpeedMps = 0.0f
+                } else {
+                    isConfirmedStationary = false
+
+                    speedHistory.add(rawSpeedMps)
+                    if (speedHistory.size > SPEED_ROLLING_WINDOW_SIZE) {
+                        speedHistory.removeFirst()
+                    }
+
+                    val windowAvg = speedHistory.average().toFloat()
+                    filteredSpeedMps = if (lastFilteredSpeedMps == 0.0f) {
+                        windowAvg
+                    } else {
+                        (EMA_ALPHA * rawSpeedMps) + ((1.0f - EMA_ALPHA) * lastFilteredSpeedMps)
+                    }
+                    lastFilteredSpeedMps = filteredSpeedMps
+
+                    val rawKmh = filteredSpeedMps * 3.6f
+                    // Clamp speeds below 2.5 km/h to 0.0 km/h to eliminate stationary crawl
+                    displaySpeedKmh = if (rawKmh < 2.5f) 0.0f else (Math.round(rawKmh * 10.0f) / 10.0f)
+                    if (displaySpeedKmh == 0.0f) {
+                        isConfirmedStationary = true
+                    }
+                }
+            }
+        } else {
+            // 2. Fallback only if GPS hardware does not provide speed (< 0)
+            val effectiveDisplacementThreshold = maxOf(
+                DISPLACEMENT_STATIONARY_BASE_METERS,
+                accuracyMeters * 0.40f
+            )
+
+            val isCandidateStationary = displacement <= effectiveDisplacementThreshold || derivedSpeedMps < 1.0f
+            if (isCandidateStationary) {
+                isConfirmedStationary = true
+                displaySpeedKmh = 0.0f
+                filteredSpeedMps = 0.0f
+                speedHistory.clear()
+                lastFilteredSpeedMps = 0.0f
+            } else {
+                isConfirmedStationary = false
+                speedHistory.add(derivedSpeedMps)
+                if (speedHistory.size > SPEED_ROLLING_WINDOW_SIZE) {
+                    speedHistory.removeFirst()
+                }
+                filteredSpeedMps = speedHistory.average().toFloat()
+                val rawKmh = filteredSpeedMps * 3.6f
+                displaySpeedKmh = if (rawKmh < 2.5f) 0.0f else (Math.round(rawKmh * 10.0f) / 10.0f)
+                if (displaySpeedKmh == 0.0f) {
+                    isConfirmedStationary = true
+                }
             }
         }
 

@@ -409,4 +409,82 @@ class OfflineMapDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_
         }
         return@withContext list
     }
+
+    suspend fun getAllOfflinePlaces(): List<DbOfflinePlace> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<DbOfflinePlace>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_PLACES, null, null, null, null, null, "name ASC", "100")
+            cursor.use { c ->
+                val idIdx = c.getColumnIndexOrThrow("id")
+                val regIdx = c.getColumnIndexOrThrow("region_id")
+                val nameIdx = c.getColumnIndexOrThrow("name")
+                val addrIdx = c.getColumnIndexOrThrow("address")
+                val latIdx = c.getColumnIndexOrThrow("latitude")
+                val lonIdx = c.getColumnIndexOrThrow("longitude")
+                val typeIdx = c.getColumnIndexOrThrow("place_type")
+
+                while (c.moveToNext()) {
+                    list.add(
+                        DbOfflinePlace(
+                            placeId = c.getLong(idIdx),
+                            regionId = c.getString(regIdx),
+                            name = c.getString(nameIdx),
+                            address = c.getString(addrIdx) ?: "",
+                            latitude = c.getDouble(latIdx),
+                            longitude = c.getDouble(lonIdx),
+                            placeType = c.getString(typeIdx) ?: "poi"
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching all offline places: ${e.message}", e)
+        }
+        return@withContext list
+    }
+
+    suspend fun getPlacesByCategory(placeType: String): List<DbOfflinePlace> = withContext(Dispatchers.IO) {
+        if (placeType.equals("ALL", ignoreCase = true)) return@withContext getAllOfflinePlaces()
+        val list = mutableListOf<DbOfflinePlace>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(
+                TABLE_PLACES,
+                null,
+                "place_type = ?",
+                arrayOf(placeType.lowercase()),
+                null,
+                null,
+                "name ASC",
+                "50"
+            )
+            cursor.use { c ->
+                val idIdx = c.getColumnIndexOrThrow("id")
+                val regIdx = c.getColumnIndexOrThrow("region_id")
+                val nameIdx = c.getColumnIndexOrThrow("name")
+                val addrIdx = c.getColumnIndexOrThrow("address")
+                val latIdx = c.getColumnIndexOrThrow("latitude")
+                val lonIdx = c.getColumnIndexOrThrow("longitude")
+                val typeIdx = c.getColumnIndexOrThrow("place_type")
+
+                while (c.moveToNext()) {
+                    list.add(
+                        DbOfflinePlace(
+                            placeId = c.getLong(idIdx),
+                            regionId = c.getString(regIdx),
+                            name = c.getString(nameIdx),
+                            address = c.getString(addrIdx) ?: "",
+                            latitude = c.getDouble(latIdx),
+                            longitude = c.getDouble(lonIdx),
+                            placeType = c.getString(typeIdx) ?: "poi"
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching places by category: ${e.message}", e)
+        }
+        return@withContext list
+    }
 }

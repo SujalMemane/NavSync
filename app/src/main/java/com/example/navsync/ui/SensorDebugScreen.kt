@@ -24,6 +24,7 @@ import com.example.navsync.sensor.ImuData
 import com.example.navsync.sensor.RotationVectorData
 import com.example.navsync.sensor.SensorAvailability
 import com.example.navsync.sensor.StreamHealth
+import com.example.navsync.ui.theme.*
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -43,11 +44,11 @@ fun SensorDebugScreen(
     val isRecording by viewModel.isRecording.collectAsState()
     val recordingPath by viewModel.recordingPath.collectAsState()
 
-    val darkBg = Color(0xFF0F172A)
-    val cardBg = Color(0xFF1E293B)
-    val textPrimary = Color(0xFFF8FAFC)
-    val textSecondary = Color(0xFF94A3B8)
-    val accentBlue = Color(0xFF38BDF8)
+    val darkBg = DarkBg
+    val cardBg = DarkSurface
+    val textPrimary = TextPrimary
+    val textSecondary = TextSecondary
+    val accentGreen = NeonGreen
 
     Scaffold(
         topBar = {
@@ -83,26 +84,28 @@ fun SensorDebugScreen(
             // Permission Banner if location permission missing
             if (!hasLocationPermission) {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = Color(0xFF7C2D12)),
-                    shape = RoundedCornerShape(12.dp),
-                    modifier = Modifier.fillMaxWidth()
+                    colors = CardDefaults.cardColors(containerColor = DarkRedBg),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, AccentRed.copy(alpha = 0.5f), RoundedCornerShape(14.dp))
                 ) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .padding(12.dp),
+                            .padding(14.dp),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Location Permission Required", color = Color.White, fontWeight = FontWeight.Bold)
-                            Text("GNSS collection requires FINE/COARSE location permission.", color = Color(0xFFFDBA74), fontSize = 12.sp)
+                            Text("Location Permission Required", color = AccentRed, fontWeight = FontWeight.Bold)
+                            Text("GNSS collection requires FINE/COARSE location permission.", color = TextSecondary, fontSize = 12.sp)
                         }
                         Button(
                             onClick = onRequestPermission,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEA580C))
+                            colors = ButtonDefaults.buttonColors(containerColor = AccentRed)
                         ) {
-                            Text("Grant", color = Color.White)
+                            Text("Grant", color = TextDark, fontWeight = FontWeight.Bold)
                         }
                     }
                 }
@@ -111,10 +114,10 @@ fun SensorDebugScreen(
             // Recording Controls
             Card(
                 colors = CardDefaults.cardColors(containerColor = cardBg),
-                shape = RoundedCornerShape(12.dp),
+                shape = RoundedCornerShape(14.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, if (isRecording) Color(0xFFEF4444) else Color(0xFF3B82F6), RoundedCornerShape(12.dp))
+                    .border(1.dp, if (isRecording) AccentRed else BorderDark, RoundedCornerShape(14.dp))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(
@@ -126,8 +129,9 @@ fun SensorDebugScreen(
                             Text(
                                 text = if (isRecording) "RECORDING IN PROGRESS" else "RAW DATA LOGGING",
                                 fontWeight = FontWeight.Bold,
-                                color = if (isRecording) Color(0xFFEF4444) else accentBlue,
-                                fontSize = 14.sp
+                                color = if (isRecording) AccentRed else accentGreen,
+                                fontSize = 13.sp,
+                                letterSpacing = 0.5.sp
                             )
                             Text(
                                 text = if (isRecording) "Saving raw IMU + GNSS CSV streams" else "Ready to record dataset for ML pipeline",
@@ -139,11 +143,21 @@ fun SensorDebugScreen(
                         Button(
                             onClick = { viewModel.toggleRecording() },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isRecording) Color(0xFFDC2626) else Color(0xFF2563EB)
+                                containerColor = if (isRecording) DarkRedBg else NeonGreen,
+                                contentColor = if (isRecording) AccentRed else TextDark
                             ),
-                            shape = RoundedCornerShape(8.dp)
+                            shape = RoundedCornerShape(10.dp),
+                            modifier = Modifier.border(
+                                1.dp,
+                                if (isRecording) AccentRed else BorderGreenSubtle,
+                                RoundedCornerShape(10.dp)
+                            )
                         ) {
-                            Text(if (isRecording) "STOP RECORDING" else "START RECORDING", color = Color.White, fontWeight = FontWeight.Bold)
+                            Text(
+                                text = if (isRecording) "STOP" else "START",
+                                fontWeight = FontWeight.Bold,
+                                fontSize = 13.sp
+                            )
                         }
                     }
 
@@ -151,7 +165,7 @@ fun SensorDebugScreen(
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "Output: $recordingPath",
-                            color = Color(0xFF4ADE80),
+                            color = NeonGreen,
                             fontSize = 11.sp,
                             fontFamily = FontFamily.Monospace
                         )
@@ -216,20 +230,22 @@ fun SensorDebugScreen(
 fun SectionHeader(title: String) {
     Text(
         text = title,
-        color = Color(0xFF94A3B8),
-        fontSize = 12.sp,
+        color = NeonGreen,
+        fontSize = 11.sp,
         fontWeight = FontWeight.Bold,
         letterSpacing = 1.sp,
-        modifier = Modifier.padding(top = 4.dp, bottom = 2.dp)
+        modifier = Modifier.padding(top = 6.dp, bottom = 2.dp)
     )
 }
 
 @Composable
 fun SensorAvailabilityCard(availability: SensorAvailability, gnssData: GnssData?) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             AvailabilityRow(name = "Accelerometer", health = availability.accelerometer)
@@ -252,33 +268,38 @@ fun AvailabilityRow(name: String, health: StreamHealth, extraStatus: String? = n
         Row(verticalAlignment = Alignment.CenterVertically) {
             BadgeChip(
                 text = if (health.isAvailable) "AVAILABLE" else "UNAVAILABLE",
-                bgColor = if (health.isAvailable) Color(0xFF15803D) else Color(0xFF991B1B)
+                bgColor = if (health.isAvailable) DarkGreenBg else DarkRedBg,
+                textColor = if (health.isAvailable) NeonGreen else AccentRed
             )
             Spacer(modifier = Modifier.width(8.dp))
-            Text(text = name, color = Color.White, fontSize = 14.sp, fontWeight = FontWeight.Medium)
+            Text(text = name, color = TextPrimary, fontSize = 14.sp, fontWeight = FontWeight.Medium)
         }
 
         Row(verticalAlignment = Alignment.CenterVertically) {
             if (health.isAvailable) {
                 Text(
                     text = String.format(Locale.US, "%.1f Hz", health.measuredFrequencyHz),
-                    color = Color(0xFF38BDF8),
+                    color = NeonGreen,
                     fontSize = 13.sp,
                     fontFamily = FontFamily.Monospace,
                     fontWeight = FontWeight.Bold
                 )
                 Spacer(modifier = Modifier.width(8.dp))
                 if (health.isStale) {
-                    BadgeChip(text = "STALE", bgColor = Color(0xFFB45309))
+                    BadgeChip(text = "STALE", bgColor = DarkElevated, textColor = AccentAmber)
                 } else {
-                    BadgeChip(text = health.accuracy.name, bgColor = Color(0xFF334155))
+                    BadgeChip(text = health.accuracy.name, bgColor = DarkElevated, textColor = TextSecondary)
                 }
             } else {
-                Text(text = "NOT AVAILABLE", color = Color(0xFF64748B), fontSize = 12.sp)
+                Text(text = "NOT AVAILABLE", color = TextMuted, fontSize = 12.sp)
             }
             if (extraStatus != null) {
                 Spacer(modifier = Modifier.width(6.dp))
-                BadgeChip(text = extraStatus, bgColor = if (extraStatus == "GNSS_ACTIVE") Color(0xFF047857) else Color(0xFFB45309))
+                BadgeChip(
+                    text = extraStatus,
+                    bgColor = if (extraStatus == "GNSS_ACTIVE") DarkGreenBg else DarkElevated,
+                    textColor = if (extraStatus == "GNSS_ACTIVE") NeonGreen else AccentAmber
+                )
             }
         }
     }
@@ -287,21 +308,23 @@ fun AvailabilityRow(name: String, health: StreamHealth, extraStatus: String? = n
 @Composable
 fun ImuTelemetryCard(sensorName: String, health: StreamHealth, data: ImuData?, unit: String) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
     ) {
         if (!health.isAvailable) {
             Box(modifier = Modifier.padding(16.dp)) {
-                Text("$sensorName NOT AVAILABLE ON THIS DEVICE", color = Color(0xFF64748B), fontSize = 13.sp)
+                Text("$sensorName NOT AVAILABLE ON THIS DEVICE", color = TextMuted, fontSize = 13.sp)
             }
             return@Card
         }
 
         Column(modifier = Modifier.padding(14.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Text("Timestamp Nanos: ${data?.timestampNanos ?: 0L}", color = Color(0xFF94A3B8), fontSize = 11.sp, fontFamily = FontFamily.Monospace)
-                Text("Accuracy: ${health.accuracy.name}", color = Color(0xFF38BDF8), fontSize = 11.sp)
+                Text("Timestamp Nanos: ${data?.timestampNanos ?: 0L}", color = TextMuted, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                Text("Accuracy: ${health.accuracy.name}", color = NeonGreen, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
             }
             Spacer(modifier = Modifier.height(10.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceAround) {
@@ -316,15 +339,15 @@ fun ImuTelemetryCard(sensorName: String, health: StreamHealth, data: ImuData?, u
 @Composable
 fun ValueColumn(label: String, value: Float, unit: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(label, color = Color(0xFF94A3B8), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = TextMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold)
         Text(
             text = String.format(Locale.US, "%+8.4f", value),
-            color = Color.White,
-            fontSize = 16.sp,
+            color = NeonGreen,
+            fontSize = 15.sp,
             fontWeight = FontWeight.Bold,
             fontFamily = FontFamily.Monospace
         )
-        Text(unit, color = Color(0xFF64748B), fontSize = 10.sp)
+        Text(unit, color = TextSecondary, fontSize = 10.sp)
     }
 }
 
@@ -334,31 +357,33 @@ fun OptionalSensorsCard(
     rotHealth: StreamHealth, rotData: RotationVectorData?
 ) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            Text("Gravity Sensor:", color = Color(0xFF38BDF8), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Gravity Sensor:", color = NeonGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             if (gravityHealth.isAvailable && gravityData != null) {
                 Text(
                     text = String.format(Locale.US, "X: %+7.3f  | Y: %+7.3f  | Z: %+7.3f m/s²", gravityData.x, gravityData.y, gravityData.z),
-                    color = Color.White, fontSize = 13.sp, fontFamily = FontFamily.Monospace
+                    color = TextPrimary, fontSize = 13.sp, fontFamily = FontFamily.Monospace
                 )
             } else {
-                Text("NOT AVAILABLE ON THIS DEVICE", color = Color(0xFF64748B), fontSize = 12.sp)
+                Text("NOT AVAILABLE ON THIS DEVICE", color = TextMuted, fontSize = 12.sp)
             }
 
-            HorizontalDivider(color = Color(0xFF334155))
+            HorizontalDivider(color = BorderDark)
 
-            Text("Rotation Vector Sensor:", color = Color(0xFF38BDF8), fontSize = 13.sp, fontWeight = FontWeight.Bold)
+            Text("Rotation Vector Sensor:", color = NeonGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold)
             if (rotHealth.isAvailable && rotData != null) {
                 Text(
                     text = String.format(Locale.US, "X: %+6.3f | Y: %+6.3f | Z: %+6.3f | W: %+6.3f", rotData.x, rotData.y, rotData.z, rotData.w),
-                    color = Color.White, fontSize = 13.sp, fontFamily = FontFamily.Monospace
+                    color = TextPrimary, fontSize = 13.sp, fontFamily = FontFamily.Monospace
                 )
             } else {
-                Text("NOT AVAILABLE ON THIS DEVICE", color = Color(0xFF64748B), fontSize = 12.sp)
+                Text("NOT AVAILABLE ON THIS DEVICE", color = TextMuted, fontSize = 12.sp)
             }
         }
     }
@@ -367,27 +392,35 @@ fun OptionalSensorsCard(
 @Composable
 fun GnssTelemetryCard(health: StreamHealth, gnss: GnssData?) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text("Status: ", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                    Text("Status: ", color = TextMuted, fontSize = 12.sp)
+                    val statusColor = when (gnss?.status) {
+                        GnssStatusState.GNSS_ACTIVE -> NeonGreen
+                        GnssStatusState.GNSS_DEGRADED -> AccentAmber
+                        else -> AccentRed
+                    }
+                    val statusBg = when (gnss?.status) {
+                        GnssStatusState.GNSS_ACTIVE -> DarkGreenBg
+                        else -> DarkRedBg
+                    }
                     BadgeChip(
                         text = gnss?.status?.name ?: "GNSS_LOST",
-                        bgColor = when (gnss?.status) {
-                            GnssStatusState.GNSS_ACTIVE -> Color(0xFF047857)
-                            GnssStatusState.GNSS_DEGRADED -> Color(0xFFB45309)
-                            else -> Color(0xFF991B1B)
-                        }
+                        bgColor = statusBg,
+                        textColor = statusColor
                     )
                 }
-                Text("Provider: ${gnss?.provider ?: "N/A"}", color = Color(0xFF38BDF8), fontSize = 12.sp)
+                Text("Provider: ${gnss?.provider ?: "N/A"}", color = NeonGreen, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
 
-            HorizontalDivider(color = Color(0xFF334155))
+            HorizontalDivider(color = BorderDark)
 
             GnssRow("Latitude", String.format(Locale.US, "%.6f°", gnss?.latitude ?: 0.0))
             GnssRow("Longitude", String.format(Locale.US, "%.6f°", gnss?.longitude ?: 0.0))
@@ -404,17 +437,19 @@ fun GnssTelemetryCard(health: StreamHealth, gnss: GnssData?) {
 @Composable
 fun GnssRow(label: String, value: String) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = Color(0xFF94A3B8), fontSize = 13.sp)
-        Text(value, color = Color.White, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+        Text(label, color = TextSecondary, fontSize = 13.sp)
+        Text(value, color = NeonGreen, fontSize = 13.sp, fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
     }
 }
 
 @Composable
 fun DataQualityCard(availability: SensorAvailability) {
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFF1E293B)),
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth()
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
     ) {
         Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             QualityRow("ACC Sampling Rate", availability.accelerometer)
@@ -430,30 +465,31 @@ fun DataQualityCard(availability: SensorAvailability) {
 @Composable
 fun QualityRow(label: String, health: StreamHealth) {
     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-        Text(label, color = Color(0xFF94A3B8), fontSize = 12.sp)
+        Text(label, color = TextSecondary, fontSize = 12.sp)
         if (health.isAvailable) {
             val statusText = if (health.isStale) "STALE (No data > 1s)" else String.format(Locale.US, "HEALTHY (%.1f Hz)", health.measuredFrequencyHz)
             Text(
                 text = statusText,
-                color = if (health.isStale) Color(0xFFF59E0B) else Color(0xFF10B981),
+                color = if (health.isStale) AccentAmber else NeonGreen,
                 fontSize = 12.sp,
                 fontWeight = FontWeight.Bold,
                 fontFamily = FontFamily.Monospace
             )
         } else {
-            Text("UNAVAILABLE", color = Color(0xFF64748B), fontSize = 12.sp)
+            Text("UNAVAILABLE", color = TextMuted, fontSize = 12.sp)
         }
     }
 }
 
 @Composable
-fun BadgeChip(text: String, bgColor: Color) {
+fun BadgeChip(text: String, bgColor: Color, textColor: Color = Color.White) {
     Box(
         modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
+            .clip(RoundedCornerShape(6.dp))
             .background(bgColor)
-            .padding(horizontal = 6.dp, vertical = 2.dp)
+            .border(1.dp, textColor.copy(alpha = 0.35f), RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 2.dp)
     ) {
-        Text(text = text, color = Color.White, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+        Text(text = text, color = textColor, fontSize = 10.sp, fontWeight = FontWeight.Bold)
     }
 }

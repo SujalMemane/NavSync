@@ -1,7 +1,10 @@
 package com.example.navsync.ui.settings
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.BugReport
@@ -15,12 +18,13 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.navsync.ui.home.NavSyncBottomBar
+import com.example.navsync.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,20 +36,17 @@ fun SettingsScreen(
     onNavigateToOfflineMaps: () -> Unit = {},
     onNavigateToOfflineTest: () -> Unit = {}
 ) {
-    val darkBg = Color(0xFF030712)
-    val cardBg = Color(0xFF0F172A)
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings & Diagnostics", color = Color.White, fontWeight = FontWeight.Bold) },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = darkBg)
+                title = { Text("Settings & Diagnostics", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp) },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
             )
         },
         bottomBar = {
             NavSyncBottomBar(currentRoute = "settings", onNavigateTab = onNavigateTab)
         },
-        containerColor = darkBg
+        containerColor = DarkBg
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -54,12 +55,20 @@ fun SettingsScreen(
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            Text("OFFLINE NAVIGATION & MAPS", color = Color(0xFF94A3B8), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(
+                text = "OFFLINE NAVIGATION & MAPS",
+                color = NeonGreen,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp
+            )
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = cardBg),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth()
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BorderDark, RoundedCornerShape(12.dp))
             ) {
                 Column {
                     SettingsRow(
@@ -68,7 +77,7 @@ fun SettingsScreen(
                         icon = Icons.Default.Download,
                         onClick = onNavigateToOfflineMaps
                     )
-                    HorizontalDivider(color = Color(0xFF334155))
+                    HorizontalDivider(color = BorderDark)
                     SettingsRow(
                         title = "Offline Navigation Test",
                         subtitle = "Simulate Internet OFF & GNSS Loss states",
@@ -78,12 +87,20 @@ fun SettingsScreen(
                 }
             }
 
-            Text("DIAGNOSTICS & SYSTEM", color = Color(0xFF94A3B8), fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+            Text(
+                text = "DIAGNOSTICS & SYSTEM",
+                color = NeonGreen,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp
+            )
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = cardBg),
-                shape = RoundedCornerShape(10.dp),
-                modifier = Modifier.fillMaxWidth()
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BorderDark, RoundedCornerShape(12.dp))
             ) {
                 Column {
                     SettingsRow(
@@ -92,24 +109,24 @@ fun SettingsScreen(
                         icon = Icons.Default.MyLocation,
                         onClick = onNavigateToNavDiagnostics
                     )
-                    HorizontalDivider(color = Color(0xFF334155))
+                    HorizontalDivider(color = BorderDark)
                     SettingsRow(
                         title = "Sensor Diagnostics",
                         subtitle = "View 100-200 Hz raw IMU streams & CSV controls",
                         icon = Icons.Default.DeveloperMode,
                         onClick = onNavigateToSensorDiagnostics
                     )
-                    HorizontalDivider(color = Color(0xFF334155))
+                    HorizontalDivider(color = BorderDark)
                     SettingsRow(
                         title = "Map Layer Settings & Diagnostics",
                         subtitle = "ISRO Bhuvan WMTS, tile cache & map style metrics",
                         icon = Icons.Default.Map,
                         onClick = onNavigateToMapDiagnostics
                     )
-                    HorizontalDivider(color = Color(0xFF334155))
+                    HorizontalDivider(color = BorderDark)
                     SettingsRow(
                         title = "About NavSync",
-                        subtitle = "Version 1.0 • TilePrint VIO Ready",
+                        subtitle = "Version 1.0 • TilePrint VIO & Dead Reckoning Ready",
                         icon = Icons.Default.Info,
                         onClick = {}
                     )
@@ -130,18 +147,27 @@ fun SettingsRow(
         modifier = Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
-            .padding(16.dp),
+            .padding(14.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-            Icon(icon, contentDescription = title, tint = Color(0xFF38BDF8))
-            Spacer(modifier = Modifier.width(16.dp))
+            Box(
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(CircleShape)
+                    .background(DarkGreenBg)
+                    .border(1.dp, BorderGreenSubtle, CircleShape),
+                contentAlignment = Alignment.Center
+            ) {
+                Icon(icon, contentDescription = title, tint = NeonGreen, modifier = Modifier.size(18.dp))
+            }
+            Spacer(modifier = Modifier.width(14.dp))
             Column {
-                Text(title, color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                Text(subtitle, color = Color(0xFF94A3B8), fontSize = 12.sp)
+                Text(title, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                Text(subtitle, color = TextSecondary, fontSize = 12.sp)
             }
         }
-        Icon(Icons.Default.ChevronRight, contentDescription = "Open", tint = Color(0xFF64748B))
+        Icon(Icons.Default.ChevronRight, contentDescription = "Open", tint = TextMuted)
     }
 }

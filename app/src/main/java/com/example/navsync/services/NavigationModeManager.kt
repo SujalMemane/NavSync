@@ -7,6 +7,7 @@ import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.util.Log
 import com.example.navsync.sensor.GnssStatusState
+import kotlinx.coroutines.channels.BufferOverflow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -34,7 +35,9 @@ enum class NavMode {
 
 enum class OfflinePopupType {
     OFFLINE_TRANSITION,
-    ONLINE_RESTORED
+    ONLINE_RESTORED,
+    DEAD_RECKONING_STARTED,
+    GNSS_RESTORED
 }
 
 class NavigationModeManager(private val context: Context) {
@@ -50,12 +53,36 @@ class NavigationModeManager(private val context: Context) {
     private val _navigationMode = MutableStateFlow(NavMode.ONLINE_GNSS)
     val navigationMode: StateFlow<NavMode> = _navigationMode.asStateFlow()
 
-    private val _popupEvent = MutableSharedFlow<OfflinePopupType>(extraBufferCapacity = 1)
+    private val _popupEvent = MutableSharedFlow<OfflinePopupType>(
+        replay = 0,
+        extraBufferCapacity = 64,
+        onBufferOverflow = BufferOverflow.DROP_OLDEST
+    )
     val popupEvent: SharedFlow<OfflinePopupType> = _popupEvent.asSharedFlow()
+
+    private var lastPopupType: OfflinePopupType? = null
+    private var lastPopupTimeMs: Long = 0L
+
+    fun emitPopup(type: OfflinePopupType) {
+        val now = System.currentTimeMillis()
+        if (lastPopupType == type && (now - lastPopupTimeMs) < 2500L) {
+            Log.d("NAVSYNC_MODE", "Debounced duplicate popup event $type")
+            return
+        }
+        lastPopupType = type
+        lastPopupTimeMs = now
+        val emitted = _popupEvent.tryEmit(type)
+        Log.d("NAVSYNC_MODE", "Emitted popup event: $type, success=$emitted")
+    }
+
+    fun notifyGnssRestored() {
+        emitPopup(OfflinePopupType.GNSS_RESTORED)
+    }
 
     // Debug Simulation Toggles
     private var simulatedOffline: Boolean = false
     private var simulatedGnssLoss: Boolean = false
+    private var gnssLostTimestampMs: Long = 0L
 
     private val networkCallback = object : ConnectivityManager.NetworkCallback() {
         override fun onAvailable(network: Network) {
@@ -89,16 +116,64 @@ class NavigationModeManager(private val context: Context) {
         }
     }
 
+    var isNavigating: Boolean = false
+        private set
+
+    fun setNavigating(navigating: Boolean) {
+        if (isNavigating != navigating) {
+            isNavigating = navigating
+            Log.d("NAVSYNC_MODE", "setNavigating=$navigating")
+            recalculateNavigationMode()
+        }
+    }
+
     fun updateGnssStatus(status: GnssStatusState) {
+        val now = System.currentTimeMillis()
+        val isLost = (status == GnssStatusState.GNSS_LOST || 
+                      status == GnssStatusState.LOCATION_DISABLED || 
+                      status == GnssStatusState.NO_PERMISSION || 
+                      simulatedGnssLoss)
+
+        if (isLost) {
+            if (gnssLostTimestampMs == 0L) {
+                gnssLostTimestampMs = now
+            }
+        } else if (status == GnssStatusState.GNSS_ACTIVE || status == GnssStatusState.GNSS_DEGRADED) {
+            gnssLostTimestampMs = 0L
+        }
+
+        val blackoutDurationMs = if (isLost) (now - gnssLostTimestampMs) else 0L
+        // 5-second blackout threshold rule requested by user
+        val isBlackoutOverThreshold = isLost && (blackoutDurationMs >= 5000L || simulatedGnssLoss)
+
         val newLocState = when {
-            simulatedGnssLoss || status == GnssStatusState.GNSS_LOST -> LocationState.GNSS_UNAVAILABLE
+            isBlackoutOverThreshold -> LocationState.GNSS_UNAVAILABLE
+            status == GnssStatusState.GNSS_ACTIVE -> LocationState.GNSS_AVAILABLE
             status == GnssStatusState.GNSS_DEGRADED -> LocationState.GNSS_DEGRADED
+            status == GnssStatusState.WAITING_FIX -> {
+                // When acquiring fix after GPS loss/blackout, hold UNAVAILABLE so dead reckoning continues smoothly until satellite fix locks
+                if (_locationState.value == LocationState.GNSS_UNAVAILABLE) LocationState.GNSS_UNAVAILABLE else LocationState.GNSS_DEGRADED
+            }
+            isLost -> {
+                // If in 5-second grace period: maintain current state or degraded
+                if (_locationState.value == LocationState.GNSS_UNAVAILABLE) LocationState.GNSS_UNAVAILABLE else LocationState.GNSS_DEGRADED
+            }
             else -> LocationState.GNSS_AVAILABLE
         }
 
         if (_locationState.value != newLocState) {
+            val oldLocState = _locationState.value
             _locationState.value = newLocState
             recalculateNavigationMode()
+
+            // Emit transition popups
+            if (oldLocState != LocationState.GNSS_UNAVAILABLE && newLocState == LocationState.GNSS_UNAVAILABLE) {
+                emitPopup(OfflinePopupType.DEAD_RECKONING_STARTED)
+                Log.d("NAVSYNC_MODE", "Emitted DEAD_RECKONING_STARTED popup event (5s blackout reached)")
+            } else if (oldLocState == LocationState.GNSS_UNAVAILABLE && newLocState != LocationState.GNSS_UNAVAILABLE) {
+                emitPopup(OfflinePopupType.GNSS_RESTORED)
+                Log.d("NAVSYNC_MODE", "Emitted GNSS_RESTORED popup event")
+            }
         }
     }
 
@@ -110,6 +185,11 @@ class NavigationModeManager(private val context: Context) {
 
     fun setSimulatedGnssLoss(gnssLoss: Boolean) {
         simulatedGnssLoss = gnssLoss
+        if (gnssLoss) {
+            gnssLostTimestampMs = System.currentTimeMillis() - 5000L // Trigger immediately on manual simulation
+        } else {
+            gnssLostTimestampMs = 0L
+        }
         updateGnssStatus(if (gnssLoss) GnssStatusState.GNSS_LOST else GnssStatusState.GNSS_ACTIVE)
         Log.d("NAVSYNC_MODE", "simulatedGnssLoss=$gnssLoss newLocationState=${_locationState.value}")
     }
@@ -131,10 +211,10 @@ class NavigationModeManager(private val context: Context) {
 
             if (emitPopup) {
                 if (oldState == ConnectivityState.ONLINE && effectiveState == ConnectivityState.OFFLINE) {
-                    _popupEvent.tryEmit(OfflinePopupType.OFFLINE_TRANSITION)
+                    emitPopup(OfflinePopupType.OFFLINE_TRANSITION)
                     Log.d("NAVSYNC_MODE", "Emitted OFFLINE_TRANSITION popup event")
                 } else if (oldState == ConnectivityState.OFFLINE && effectiveState == ConnectivityState.ONLINE) {
-                    _popupEvent.tryEmit(OfflinePopupType.ONLINE_RESTORED)
+                    emitPopup(OfflinePopupType.ONLINE_RESTORED)
                     Log.d("NAVSYNC_MODE", "Emitted ONLINE_RESTORED popup event")
                 }
             }
@@ -156,13 +236,13 @@ class NavigationModeManager(private val context: Context) {
         val loc = _locationState.value
 
         val newMode = when {
-            loc == LocationState.GNSS_UNAVAILABLE -> NavMode.DEAD_RECKONING
+            isNavigating && loc == LocationState.GNSS_UNAVAILABLE -> NavMode.DEAD_RECKONING
             conn == ConnectivityState.OFFLINE -> NavMode.OFFLINE_GNSS
             else -> NavMode.ONLINE_GNSS
         }
 
         if (_navigationMode.value != newMode) {
-            Log.d("NAVSYNC_MODE", "NAVIGATION_MODE_TRANSITION oldMode=${_navigationMode.value} newMode=$newMode connectivity=$conn locationState=$loc")
+            Log.d("NAVSYNC_MODE", "NAVIGATION_MODE_TRANSITION oldMode=${_navigationMode.value} newMode=$newMode connectivity=$conn locationState=$loc isNavigating=$isNavigating")
             _navigationMode.value = newMode
         }
     }

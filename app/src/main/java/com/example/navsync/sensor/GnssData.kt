@@ -6,7 +6,8 @@ enum class GnssStatusState {
     WAITING_FIX,
     GNSS_ACTIVE,
     GNSS_DEGRADED,
-    GNSS_LOST
+    GNSS_LOST,
+    DEAD_RECKONING
 }
 
 /**
@@ -26,6 +27,9 @@ data class GnssData(
     val bearingAccuracy: Float = 0f,
     val satelliteCount: Int = 0,
     val usedInFix: Int = 0,
+    val strongCount: Int = 0,
+    val moderateCount: Int = 0,
+    val weakCount: Int = 0,
     val provider: String = "none",
     val status: GnssStatusState = GnssStatusState.GNSS_LOST
 )

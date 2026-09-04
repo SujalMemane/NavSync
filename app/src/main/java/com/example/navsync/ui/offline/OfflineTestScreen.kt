@@ -1,8 +1,11 @@
 package com.example.navsync.ui.offline
 
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -12,7 +15,9 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -20,6 +25,7 @@ import com.example.navsync.repository.OfflineMapRepository
 import com.example.navsync.services.ConnectivityState
 import com.example.navsync.services.LocationState
 import com.example.navsync.services.NavigationModeManager
+import com.example.navsync.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -36,28 +42,21 @@ fun OfflineTestScreen(
     var isSimulatedOffline by remember { mutableStateOf(false) }
     var isSimulatedGnssLoss by remember { mutableStateOf(false) }
 
-    val darkBg = Color(0xFF030712)
-    val cardBg = Color(0xFF0F172A)
-    val borderNavy = Color(0xFF334155)
-    val accentBlue = Color(0xFF00B0FF)
-    val textPrimary = Color(0xFFFFFFFF)
-    val textMuted = Color(0xFF94A3B8)
-
     val hasMapDownloaded = downloadedRegions.isNotEmpty()
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Offline Navigation Test", color = textPrimary, fontWeight = FontWeight.Bold) },
+                title = { Text("Offline Navigation Test", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = darkBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
             )
         },
-        containerColor = darkBg
+        containerColor = DarkBg
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -69,17 +68,26 @@ fun OfflineTestScreen(
             // Test Dashboard Summary Card
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, borderNavy, RoundedCornerShape(16.dp))
+                        .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
                 ) {
                     Column(modifier = Modifier.padding(16.dp)) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.BugReport, contentDescription = null, tint = accentBlue, modifier = Modifier.size(22.dp))
-                            Spacer(modifier = Modifier.width(10.dp))
-                            Text("OFFLINE NAVIGATION DIAGNOSTICS", color = textPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(DarkGreenBg)
+                                    .border(1.dp, BorderGreenSubtle, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.BugReport, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Text("OFFLINE NAVIGATION DIAGNOSTICS", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
                         }
 
                         Spacer(modifier = Modifier.height(14.dp))
@@ -98,17 +106,23 @@ fun OfflineTestScreen(
             // Developer Simulation Controls Card
             item {
                 Card(
-                    colors = CardDefaults.cardColors(containerColor = cardBg),
-                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    shape = RoundedCornerShape(14.dp),
                     modifier = Modifier
                         .fillMaxWidth()
-                        .border(1.dp, borderNavy, RoundedCornerShape(16.dp))
+                        .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
                 ) {
                     Column(
                         modifier = Modifier.padding(16.dp),
                         verticalArrangement = Arrangement.spacedBy(12.dp)
                     ) {
-                        Text("SIMULATION CONTROLS (DEBUG ONLY)", color = textMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                        Text(
+                            text = "SIMULATION CONTROLS (DEBUG ONLY)",
+                            color = NeonGreen,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Bold,
+                            letterSpacing = 1.sp
+                        )
 
                         // Internet OFF Toggle Button
                         Button(
@@ -117,16 +131,21 @@ fun OfflineTestScreen(
                                 navigationModeManager.setSimulatedOffline(isSimulatedOffline)
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSimulatedOffline) Color(0xFFEF4444) else Color(0xFF1E293B)
+                                containerColor = if (isSimulatedOffline) DarkRedBg else DarkElevated,
+                                contentColor = if (isSimulatedOffline) AccentRed else TextPrimary
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(46.dp)
+                                .border(
+                                    1.dp,
+                                    if (isSimulatedOffline) AccentRed else BorderDark,
+                                    RoundedCornerShape(12.dp)
+                                )
                         ) {
                             Text(
                                 if (isSimulatedOffline) "INTERNET SIMULATION: OFF (OFFLINE MODE)" else "SIMULATE INTERNET OFF",
-                                color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -139,16 +158,21 @@ fun OfflineTestScreen(
                                 navigationModeManager.setSimulatedGnssLoss(isSimulatedGnssLoss)
                             },
                             colors = ButtonDefaults.buttonColors(
-                                containerColor = if (isSimulatedGnssLoss) Color(0xFFF59E0B) else Color(0xFF1E293B)
+                                containerColor = if (isSimulatedGnssLoss) DarkElevated else DarkElevated,
+                                contentColor = if (isSimulatedGnssLoss) AccentAmber else TextPrimary
                             ),
                             shape = RoundedCornerShape(12.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(46.dp)
+                                .border(
+                                    1.dp,
+                                    if (isSimulatedGnssLoss) AccentAmber else BorderDark,
+                                    RoundedCornerShape(12.dp)
+                                )
                         ) {
                             Text(
                                 if (isSimulatedGnssLoss) "GNSS SIMULATION: LOST (DEAD RECKONING)" else "SIMULATE GNSS LOSS",
-                                color = Color.White,
                                 fontWeight = FontWeight.Bold,
                                 fontSize = 13.sp
                             )
@@ -162,14 +186,18 @@ fun OfflineTestScreen(
                                 navigationModeManager.resetSimulations()
                             },
                             shape = RoundedCornerShape(12.dp),
-                            colors = ButtonDefaults.outlinedButtonColors(contentColor = textPrimary),
+                            border = BorderStroke(1.dp, BorderGreenSubtle),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = DarkGreenBg,
+                                contentColor = NeonGreen
+                            ),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(46.dp)
                         ) {
-                            Icon(Icons.Default.Refresh, contentDescription = null, tint = textPrimary)
+                            Icon(Icons.Default.Refresh, contentDescription = null, tint = NeonGreen)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("RESET SIMULATIONS", fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                            Text("RESET SIMULATIONS", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NeonGreen)
                         }
                     }
                 }
@@ -187,12 +215,13 @@ fun TestStatusRow(label: String, value: String, isSuccess: Boolean) {
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Text(label, color = Color(0xFF94A3B8), fontSize = 12.sp)
+        Text(label, color = TextSecondary, fontSize = 12.sp)
         Text(
-            value,
-            color = if (isSuccess) Color(0xFF10B981) else Color(0xFFEF4444),
+            text = value,
+            color = if (isSuccess) NeonGreen else AccentRed,
             fontSize = 12.sp,
-            fontWeight = FontWeight.Bold
+            fontWeight = FontWeight.Bold,
+            fontFamily = FontFamily.Monospace
         )
     }
 }

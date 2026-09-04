@@ -16,12 +16,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.example.navsync.repository.OfflineMapRepository
 import com.example.navsync.ui.home.HomeViewModel
+import com.example.navsync.ui.theme.*
 import kotlinx.coroutines.launch
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
@@ -53,14 +55,6 @@ fun DownloadMapScreen(
     var centerLon by remember { mutableStateOf(if (uiState.hasValidFix) uiState.longitude else 73.8567) }
     var zoomLevel by remember { mutableStateOf(12.0) }
 
-    val darkBg = Color(0xFF030712)
-    val cardBg = Color(0xFF0F172A)
-    val borderNavy = Color(0xFF334155)
-    val accentBlue = Color(0xFF00B0FF)
-    val accentNavy = Color(0xFF2563EB)
-    val textPrimary = Color(0xFFFFFFFF)
-    val textMuted = Color(0xFF94A3B8)
-
     // Calculate approximate area dimensions & file size based on zoom & viewport bounding box
     val approxWidthKm = (40000.0 / Math.pow(2.0, zoomLevel)) * 3.5
     val approxHeightKm = approxWidthKm * 0.75
@@ -70,16 +64,16 @@ fun DownloadMapScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Select Map Area", color = textPrimary, fontWeight = FontWeight.Bold) },
+                title = { Text("Select Map Area", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = darkBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
             )
         },
-        containerColor = darkBg
+        containerColor = DarkBg
     ) { innerPadding ->
         Box(
             modifier = Modifier
@@ -124,15 +118,15 @@ fun DownloadMapScreen(
                 }
             )
 
-            // 2. GOOGLE MAPS STYLE SELECTION RECTANGLE OVERLAY (Centered)
+            // 2. MODERN SELECTION RECTANGLE OVERLAY (Neon green accent)
             Box(
                 modifier = Modifier
                     .fillMaxWidth(0.82f)
                     .fillMaxHeight(0.55f)
                     .align(Alignment.Center)
                     .clip(RoundedCornerShape(16.dp))
-                    .background(Color(0x2200B0FF))
-                    .border(2.5.dp, accentBlue, RoundedCornerShape(16.dp))
+                    .background(DarkGreenBg.copy(alpha = 0.25f))
+                    .border(2.dp, NeonGreen, RoundedCornerShape(16.dp))
             ) {
                 // Instruction pill inside selection rectangle
                 Box(
@@ -140,13 +134,13 @@ fun DownloadMapScreen(
                         .align(Alignment.TopCenter)
                         .padding(top = 12.dp)
                         .clip(RoundedCornerShape(20.dp))
-                        .background(cardBg.copy(alpha = 0.9f))
-                        .border(1.dp, borderNavy, RoundedCornerShape(20.dp))
+                        .background(DarkElevated.copy(alpha = 0.92f))
+                        .border(1.dp, BorderGreenSubtle, RoundedCornerShape(20.dp))
                         .padding(horizontal = 14.dp, vertical = 6.dp)
                 ) {
                     Text(
-                        "Pan & zoom map to adjust download area",
-                        color = Color.White,
+                        text = "Pan & zoom map to adjust download area",
+                        color = TextPrimary,
                         fontSize = 12.sp,
                         fontWeight = FontWeight.SemiBold
                     )
@@ -155,30 +149,30 @@ fun DownloadMapScreen(
 
             // 3. TOP REGION NAME INPUT CARD
             Card(
-                colors = CardDefaults.cardColors(containerColor = cardBg.copy(alpha = 0.95f)),
+                colors = CardDefaults.cardColors(containerColor = DarkSurface.copy(alpha = 0.95f)),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .align(Alignment.TopCenter)
                     .padding(14.dp)
                     .fillMaxWidth()
-                    .border(1.dp, borderNavy, RoundedCornerShape(16.dp))
+                    .border(1.dp, BorderDark, RoundedCornerShape(16.dp))
             ) {
                 Row(
                     modifier = Modifier.padding(12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
-                    Icon(Icons.Default.Map, contentDescription = null, tint = accentBlue, modifier = Modifier.size(20.dp))
+                    Icon(Icons.Default.Map, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(20.dp))
                     Spacer(modifier = Modifier.width(10.dp))
                     OutlinedTextField(
                         value = regionNameInput,
                         onValueChange = { regionNameInput = it },
                         singleLine = true,
-                        placeholder = { Text("Region Name", color = textMuted) },
+                        placeholder = { Text("Region Name", color = TextMuted) },
                         colors = OutlinedTextFieldDefaults.colors(
-                            focusedBorderColor = accentBlue,
-                            unfocusedBorderColor = borderNavy,
-                            focusedTextColor = textPrimary,
-                            unfocusedTextColor = textPrimary
+                            focusedBorderColor = NeonGreen,
+                            unfocusedBorderColor = BorderDark,
+                            focusedTextColor = TextPrimary,
+                            unfocusedTextColor = TextPrimary
                         ),
                         modifier = Modifier.weight(1f)
                     )
@@ -187,12 +181,12 @@ fun DownloadMapScreen(
 
             // 4. BOTTOM DOWNLOAD CONTROL CARD
             Card(
-                colors = CardDefaults.cardColors(containerColor = cardBg),
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
                 shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .fillMaxWidth()
-                    .border(1.dp, borderNavy, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
+                    .border(1.dp, BorderDark, RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp))
             ) {
                 Column(
                     modifier = Modifier
@@ -205,22 +199,24 @@ fun DownloadMapScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Column {
-                            Text("ESTIMATED AREA", color = textMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("ESTIMATED AREA", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             Text(
-                                String.format(Locale.US, "%.1f km × %.1f km", approxWidthKm, approxHeightKm),
-                                color = textPrimary,
+                                text = String.format(Locale.US, "%.1f km × %.1f km", approxWidthKm, approxHeightKm),
+                                color = TextPrimary,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 15.sp
+                                fontSize = 15.sp,
+                                fontFamily = FontFamily.Monospace
                             )
                         }
 
                         Column(horizontalAlignment = Alignment.End) {
-                            Text("DOWNLOAD SIZE", color = textMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Text("DOWNLOAD SIZE", color = TextMuted, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                             Text(
-                                "$estimatedSizeMb MB",
-                                color = accentBlue,
+                                text = "$estimatedSizeMb MB",
+                                color = NeonGreen,
                                 fontWeight = FontWeight.Bold,
-                                fontSize = 16.sp
+                                fontSize = 16.sp,
+                                fontFamily = FontFamily.Monospace
                             )
                         }
                     }
@@ -234,16 +230,16 @@ fun DownloadMapScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween,
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
-                                Text(downloadStatusText, color = textPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                                Text("$downloadProgress%", color = accentBlue, fontSize = 14.sp, fontWeight = FontWeight.Bold)
+                                Text(downloadStatusText, color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                                Text("$downloadProgress%", color = NeonGreen, fontSize = 14.sp, fontWeight = FontWeight.Bold)
                             }
 
                             Spacer(modifier = Modifier.height(8.dp))
 
                             LinearProgressIndicator(
                                 progress = { downloadProgress / 100f },
-                                color = accentBlue,
-                                trackColor = borderNavy,
+                                color = NeonGreen,
+                                trackColor = DarkGreenBg,
                                 modifier = Modifier
                                     .fillMaxWidth()
                                     .height(8.dp)
@@ -263,15 +259,15 @@ fun DownloadMapScreen(
                                     )
                                 }
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = accentNavy),
-                            shape = RoundedCornerShape(24.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = TextDark),
+                            shape = RoundedCornerShape(14.dp),
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(50.dp)
                         ) {
-                            Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
+                            Icon(Icons.Default.Download, contentDescription = null, tint = TextDark)
                             Spacer(modifier = Modifier.width(8.dp))
-                            Text("DOWNLOAD THIS AREA", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                            Text("DOWNLOAD THIS AREA", color = TextDark, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                         }
                     }
                 }

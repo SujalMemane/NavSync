@@ -50,8 +50,9 @@ class OfflineMapRepository(private val context: Context) {
     suspend fun loadRegionsAndGraph() = withContext(Dispatchers.IO) {
         var regions = db.getDownloadedRegions()
 
-        // If database is brand new, pre-populate default test region (Pune Region)
-        if (regions.isEmpty()) {
+        // If database is brand new or lacks rich landmarks, pre-populate default test region (Pune Region)
+        val existingPlaces = db.getAllOfflinePlaces()
+        if (regions.isEmpty() || existingPlaces.size < 15) {
             val defaultRegion = OfflineRegionRecord(
                 regionId = "pune_region_01",
                 name = "Pune Offline Region",
@@ -248,17 +249,42 @@ class OfflineMapRepository(private val context: Context) {
             }
         }
 
-        // Add places for offline search
-        places.add(DbOfflinePlace(1, regionId, "Pune Railway Station", "Agarkar Nagar, Pune", centerLat + 0.01, centerLon + 0.01, "station"))
-        places.add(DbOfflinePlace(2, regionId, "Pune International Airport", "Lohegaon, Pune", centerLat + 0.03, centerLon + 0.02, "airport"))
-        places.add(DbOfflinePlace(3, regionId, "Sassoon Hospital", "Near Pune Station, Pune", centerLat + 0.008, centerLon + 0.012, "hospital"))
-        places.add(DbOfflinePlace(4, regionId, "Fergusson College", "FC Road, Shivajinagar, Pune", centerLat - 0.01, centerLon - 0.01, "university"))
-        places.add(DbOfflinePlace(5, regionId, "Phoenix Marketcity", "Viman Nagar, Pune", centerLat + 0.025, centerLon + 0.025, "mall"))
-        places.add(DbOfflinePlace(6, regionId, "HP Fuel Station", "Station Road, Pune", centerLat + 0.005, centerLon + 0.005, "fuel"))
+        // Add diverse landmark places across categories for rich Google Maps feel
+        places.add(DbOfflinePlace(1, regionId, "Pune Railway Station", "Agarkar Nagar, Pune", centerLat + 0.008, centerLon + 0.012, "transit"))
+        places.add(DbOfflinePlace(2, regionId, "Pune International Airport", "Lohegaon, Pune", centerLat + 0.035, centerLon + 0.030, "transit"))
+        places.add(DbOfflinePlace(3, regionId, "Swargate Bus Terminal", "Swargate, Pune", centerLat - 0.015, centerLon + 0.002, "transit"))
+        places.add(DbOfflinePlace(4, regionId, "Shivajinagar Metro Station", "Shivajinagar, Pune", centerLat + 0.005, centerLon - 0.008, "transit"))
+
+        places.add(DbOfflinePlace(5, regionId, "Sassoon General Hospital", "Station Road, Pune", centerLat + 0.007, centerLon + 0.014, "hospital"))
+        places.add(DbOfflinePlace(6, regionId, "KEM Hospital", "Rasta Peth, Pune", centerLat + 0.002, centerLon + 0.015, "hospital"))
+        places.add(DbOfflinePlace(7, regionId, "Ruby Hall Clinic", "Bund Garden Road, Pune", centerLat + 0.015, centerLon + 0.018, "hospital"))
+        places.add(DbOfflinePlace(8, regionId, "Poona Hospital & Research Centre", "Sadashiv Peth, Pune", centerLat - 0.006, centerLon - 0.009, "hospital"))
+
+        places.add(DbOfflinePlace(9, regionId, "HP AutoCare Fuel Station", "Station Road, Pune", centerLat + 0.004, centerLon + 0.005, "fuel"))
+        places.add(DbOfflinePlace(10, regionId, "Shell Petrol Pump", "Senapati Bapat Road, Pune", centerLat + 0.012, centerLon - 0.018, "fuel"))
+        places.add(DbOfflinePlace(11, regionId, "Indian Oil EV Charging & Petrol", "Shivajinagar, Pune", centerLat + 0.003, centerLon - 0.004, "fuel"))
+        places.add(DbOfflinePlace(12, regionId, "Bharat Petroleum Pump", "FC Road, Pune", centerLat - 0.004, centerLon - 0.012, "fuel"))
+
+        places.add(DbOfflinePlace(13, regionId, "Shaniwar Wada", "Bajirao Road, Shaniwar Peth, Pune", centerLat + 0.001, centerLon - 0.002, "landmark"))
+        places.add(DbOfflinePlace(14, regionId, "Aga Khan Palace", "Nagar Road, Kalyani Nagar, Pune", centerLat + 0.028, centerLon + 0.038, "landmark"))
+        places.add(DbOfflinePlace(15, regionId, "Dagdusheth Halwai Ganpati Temple", "Budhwar Peth, Pune", centerLat - 0.002, centerLon + 0.001, "landmark"))
+        places.add(DbOfflinePlace(16, regionId, "Fergusson College", "FC Road, Shivajinagar, Pune", centerLat - 0.008, centerLon - 0.016, "landmark"))
+        places.add(DbOfflinePlace(17, regionId, "Raja Dinkar Kelkar Museum", "Shukrawar Peth, Pune", centerLat - 0.009, centerLon + 0.003, "landmark"))
+
+        places.add(DbOfflinePlace(18, regionId, "Vaishali Restaurant", "FC Road, Deccan Gymkhana, Pune", centerLat - 0.007, centerLon - 0.015, "food"))
+        places.add(DbOfflinePlace(19, regionId, "Goodluck Cafe", "FC Road, Deccan, Pune", centerLat - 0.005, centerLon - 0.014, "food"))
+        places.add(DbOfflinePlace(20, regionId, "German Bakery", "Koregaon Park, Pune", centerLat + 0.018, centerLon + 0.032, "food"))
+        places.add(DbOfflinePlace(21, regionId, "Kayani Bakery", "East Street, Camp, Pune", centerLat - 0.003, centerLon + 0.022, "food"))
+
+        places.add(DbOfflinePlace(22, regionId, "Phoenix Marketcity Mall", "Viman Nagar, Pune", centerLat + 0.032, centerLon + 0.040, "shopping"))
+        places.add(DbOfflinePlace(23, regionId, "The Pavillion Mall", "Senapati Bapat Road, Pune", centerLat + 0.014, centerLon - 0.016, "shopping"))
 
         db.insertRoadGraph(regionId, nodes, segments, places)
         return (segments.size * 500L + places.size * 300L + 25L * 1024L * 1024L) // Estimated size bytes
     }
+
+    suspend fun getAllLandmarks(): List<DbOfflinePlace> = db.getAllOfflinePlaces()
+    suspend fun getLandmarksByCategory(category: String): List<DbOfflinePlace> = db.getPlacesByCategory(category)
 
     private fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
         val res = FloatArray(1)

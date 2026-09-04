@@ -6,10 +6,12 @@ import com.example.navsync.repository.LocationPoint
 import com.example.navsync.sensor.GnssStatusState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -76,13 +78,17 @@ class NavigationEngine(
 
     private var offRouteCount = 0
     private var isRerouteInFlight = false
+    private var routeJob: Job? = null
+    private var rerouteJob: Job? = null
 
     fun updatePosition(position: NavigationPosition, gpsStatus: GnssStatusState) {
         val currentState = _engineState.value
         val nowMs = System.currentTimeMillis()
 
-        val isGpsStale = (nowMs - position.wallClockMillis) > 10_000L
-        val effectiveGpsStatus = if (isGpsStale) GnssStatusState.GNSS_LOST else gpsStatus
+        val effectiveGpsStatus = when {
+            position.source == PositionSource.DEAD_RECKONING || gpsStatus == GnssStatusState.DEAD_RECKONING -> GnssStatusState.DEAD_RECKONING
+            else -> gpsStatus
+        }
 
         val speed = position.displaySpeedKmh
         val heading = if (position.bearing >= 0f) position.bearing else currentState.headingDegrees
@@ -206,14 +212,18 @@ class NavigationEngine(
     }
 
     fun requestRouteToDestination(destination: PlaceResult, currentLocation: LocationPoint) {
+        routeJob?.cancel()
+        rerouteJob?.cancel()
+        isRerouteInFlight = false
         _engineState.value = _engineState.value.copy(
             mode = NavigationMode.ROUTE_LOADING,
             destinationPlace = destination,
             errorMessage = null
         )
 
-        engineScope.launch {
+        routeJob = engineScope.launch {
             val result = routingProvider.calculateRoute(currentLocation, LocationPoint(destination.latitude, destination.longitude))
+            if (!isActive) return@launch
             if (result.isSuccess) {
                 val primary = result.primaryRoute
                 _engineState.value = _engineState.value.copy(
@@ -262,13 +272,17 @@ class NavigationEngine(
     }
 
     fun stopNavigation() {
+        routeJob?.cancel()
+        routeJob = null
+        rerouteJob?.cancel()
+        rerouteJob = null
+        offRouteCount = 0
+        isRerouteInFlight = false
         _engineState.value = NavEngineState(
             mode = NavigationMode.IDLE,
             currentPosition = _engineState.value.currentPosition,
             gpsStatus = _engineState.value.gpsStatus
         )
-        offRouteCount = 0
-        isRerouteInFlight = false
         Log.d(TAG, "Navigation stopped mode=IDLE")
     }
 
@@ -277,17 +291,20 @@ class NavigationEngine(
     }
 
     private fun triggerReroute(currentPos: NavigationPosition, destination: LocationPoint) {
+        if (_engineState.value.mode == NavigationMode.IDLE) return
         isRerouteInFlight = true
         _engineState.value = _engineState.value.copy(
             isRerouting = true,
             mode = NavigationMode.REROUTING
         )
 
-        engineScope.launch {
+        rerouteJob?.cancel()
+        rerouteJob = engineScope.launch {
             val result = routingProvider.reroute(
                 LocationPoint(currentPos.latitude, currentPos.longitude),
                 destination
             )
+            if (!isActive) return@launch
             if (result.isSuccess && result.primaryRoute != null) {
                 val newRoute = result.primaryRoute
                 offRouteCount = 0

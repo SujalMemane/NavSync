@@ -22,6 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.navsync.ui.home.HomeViewModel
+import com.example.navsync.ui.theme.*
 import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -36,24 +37,19 @@ fun MapDiagnosticsScreen(
     val navEngineState by homeViewModel.navigationEngine.engineState.collectAsState()
     val context = LocalContext.current
 
-    val darkBg = Color(0xFF030712)
-    val cardBg = Color(0xFF0F172A)
-    val borderNavy = Color(0xFF334155)
-    val accentBlue = Color(0xFF38BDF8)
-
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Map Layer Diagnostics", color = Color.White, fontWeight = FontWeight.Bold) },
+                title = { Text("Map Layer Diagnostics", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = Color.White)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = darkBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
             )
         },
-        containerColor = darkBg
+        containerColor = DarkBg
     ) { innerPadding ->
         LazyColumn(
             modifier = Modifier
@@ -66,40 +62,34 @@ fun MapDiagnosticsScreen(
             item {
                 DiagnosticCard(
                     title = "CURRENT MAP CONFIGURATION",
-                    icon = Icons.Default.Layers,
-                    cardBg = cardBg,
-                    borderColor = borderNavy,
-                    accentColor = accentBlue
+                    icon = Icons.Default.Layers
                 ) {
-                    DiagnosticRow("Selected Map Style", selectedStyle.displayName.uppercase())
-                    DiagnosticRow("Map System State", mapInitState.name)
+                    DiagnosticRow("Selected Map Style", selectedStyle.displayName.uppercase(), isHighlight = true)
+                    DiagnosticRow("Map System State", mapInitState.name, isHighlight = true)
                     DiagnosticRow("Primary Provider", selectedStyle.providerName)
-                    DiagnosticRow("Tile URL / Domain", if (selectedStyle.id == "streets") "basemaps.cartocdn.com" else "server.arcgisonline.com")
-                    DiagnosticRow("Attribution", "ISRO Bhuvan | CARTO | OpenStreetMap")
+                    DiagnosticRow("Tile Domain", if (selectedStyle.id == "streets" || selectedStyle.id == "hybrid" || selectedStyle.id == "terrain") "mt0-3.google.com" else "server.arcgisonline.com")
+                    DiagnosticRow("Attribution", "Google Maps | ISRO Bhuvan | OpenStreetMap")
                 }
             }
 
-            // 2. LAYER CHECKLIST STATUS (PART 16)
+            // 2. LAYER CHECKLIST STATUS
             item {
                 DiagnosticCard(
                     title = "LAYER PIPELINE CHECKLIST",
-                    icon = Icons.Default.CheckCircle,
-                    cardBg = cardBg,
-                    borderColor = borderNavy,
-                    accentColor = Color(0xFF10B981)
+                    icon = Icons.Default.CheckCircle
                 ) {
                     val isSatelliteActive = selectedStyle.id == "satellite" || selectedStyle.id == "hybrid"
                     val isRoadsActive = selectedStyle.id != "satellite"
                     val isRouteActive = navEngineState.activeRoute != null
                     val isLocationActive = uiState.hasValidFix
 
-                    DiagnosticRow("Satellite Imagery", if (isSatelliteActive) "✓ ACTIVE" else "✗ INACTIVE")
-                    DiagnosticRow("Road Network", if (isRoadsActive) "✓ ACTIVE" else "✗ INACTIVE")
-                    DiagnosticRow("Road Labels", if (isRoadsActive) "✓ ACTIVE" else "✗ INACTIVE")
-                    DiagnosticRow("Places & Localities", if (isRoadsActive) "✓ ACTIVE" else "✗ INACTIVE")
-                    DiagnosticRow("POIs & Landmarks", if (isRoadsActive) "✓ ACTIVE (Zoom Filtered)" else "✗ INACTIVE")
-                    DiagnosticRow("Navigation Route", if (isRouteActive) "✓ ACTIVE" else "✗ NO ROUTE")
-                    DiagnosticRow("GPS Location Marker", if (isLocationActive) "✓ ACTIVE" else "✗ NO FIX")
+                    DiagnosticRow("Satellite Imagery", if (isSatelliteActive) "✓ ACTIVE" else "✗ INACTIVE", isHighlight = isSatelliteActive)
+                    DiagnosticRow("Road Network", if (isRoadsActive) "✓ ACTIVE" else "✗ INACTIVE", isHighlight = isRoadsActive)
+                    DiagnosticRow("Road Labels", if (isRoadsActive) "✓ ACTIVE" else "✗ INACTIVE", isHighlight = isRoadsActive)
+                    DiagnosticRow("Places & Localities", if (isRoadsActive) "✓ ACTIVE" else "✗ INACTIVE", isHighlight = isRoadsActive)
+                    DiagnosticRow("POIs & Landmarks", if (isRoadsActive) "✓ ACTIVE (Zoom Filtered)" else "✗ INACTIVE", isHighlight = isRoadsActive)
+                    DiagnosticRow("Navigation Route", if (isRouteActive) "✓ ACTIVE" else "✗ NO ROUTE", isHighlight = isRouteActive)
+                    DiagnosticRow("GPS Location Marker", if (isLocationActive) "✓ ACTIVE" else "✗ NO FIX", isHighlight = isLocationActive)
                 }
             }
 
@@ -107,10 +97,7 @@ fun MapDiagnosticsScreen(
             item {
                 DiagnosticCard(
                     title = "LAYER ENGINE & DATA SOURCES",
-                    icon = Icons.Default.Map,
-                    cardBg = cardBg,
-                    borderColor = borderNavy,
-                    accentColor = Color(0xFF10B981)
+                    icon = Icons.Default.Map
                 ) {
                     DiagnosticRow("Satellite Imagery Source", "ISRO Bhuvan WMTS / Esri World Imagery")
                     DiagnosticRow("Vector / Street Source", "CartoDB Voyager (OpenStreetMap Data)")
@@ -126,15 +113,12 @@ fun MapDiagnosticsScreen(
             item {
                 DiagnosticCard(
                     title = "CAMERA & VIEWPORT STATUS",
-                    icon = Icons.Default.Info,
-                    cardBg = cardBg,
-                    borderColor = borderNavy,
-                    accentColor = accentBlue
+                    icon = Icons.Default.Info
                 ) {
                     DiagnosticRow("Center Latitude", if (uiState.hasValidFix) String.format(Locale.US, "%.6f°", uiState.latitude) else "20.593700° (Default India)")
                     DiagnosticRow("Center Longitude", if (uiState.hasValidFix) String.format(Locale.US, "%.6f°", uiState.longitude) else "78.962900° (Default India)")
-                    DiagnosticRow("Current Location Fix", if (uiState.hasValidFix) "VALID FIX (GPS ACTIVE)" else "NO FIX (Default Viewport)")
-                    DiagnosticRow("Camera Follow Mode", if (uiState.isMapFollowing) "FOLLOWING CURRENT LOCATION" else "MANUAL PAN")
+                    DiagnosticRow("Current Location Fix", if (uiState.hasValidFix) "VALID FIX (GPS ACTIVE)" else "NO FIX (Default Viewport)", isHighlight = uiState.hasValidFix)
+                    DiagnosticRow("Camera Follow Mode", if (uiState.isMapFollowing) "FOLLOWING CURRENT LOCATION" else "MANUAL PAN", isHighlight = uiState.isMapFollowing)
                 }
             }
 
@@ -142,15 +126,12 @@ fun MapDiagnosticsScreen(
             item {
                 DiagnosticCard(
                     title = "TILE CACHE & NETWORK PIPELINE",
-                    icon = Icons.Default.Storage,
-                    cardBg = cardBg,
-                    borderColor = borderNavy,
-                    accentColor = accentBlue
+                    icon = Icons.Default.Storage
                 ) {
                     val cacheDir = java.io.File(context.cacheDir, "osmdroid_tile_cache")
                     DiagnosticRow("Cache Directory", cacheDir.name)
                     DiagnosticRow("Max Disk Cache Size", "100 MB (Auto-trimmed at 80 MB)")
-                    DiagnosticRow("Tile Cache Status", if (cacheDir.exists()) "ACTIVE (Read/Write OK)" else "INITIALIZING")
+                    DiagnosticRow("Tile Cache Status", if (cacheDir.exists()) "ACTIVE (Read/Write OK)" else "INITIALIZING", isHighlight = cacheDir.exists())
                     DiagnosticRow("Last HTTP Status", "200 OK (HTTPS Encrypted)")
                     DiagnosticRow("Last Successful Tile", "HTTP 200 OK (Loaded)")
                     DiagnosticRow("Last Failed Tile", "None")

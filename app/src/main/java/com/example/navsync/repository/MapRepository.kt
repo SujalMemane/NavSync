@@ -35,33 +35,33 @@ enum class MapStyle(
     val isAvailable: Boolean,
     val description: String
 ) {
-    SATELLITE(
-        id = "satellite",
-        displayName = "Satellite",
-        providerName = "ISRO Bhuvan / Esri Imagery",
-        isAvailable = true,
-        description = "High-resolution satellite imagery"
-    ),
     STREETS(
         id = "streets",
         displayName = "Streets",
-        providerName = "OpenStreetMap Base Map",
+        providerName = "Google Maps Roadmap",
         isAvailable = true,
-        description = "Detailed road networks, streets & landmarks"
+        description = "Full Google Maps roads, street names, highway labels & landmarks"
     ),
     HYBRID(
         id = "hybrid",
         displayName = "Hybrid",
-        providerName = "Satellite + Roads & Labels",
+        providerName = "Google Hybrid",
         isAvailable = true,
-        description = "Satellite imagery with road overlay & place names"
+        description = "High-resolution satellite imagery with Google roads & landmark labels"
+    ),
+    SATELLITE(
+        id = "satellite",
+        displayName = "Satellite",
+        providerName = "ISRO Bhuvan / Esri Satellite",
+        isAvailable = true,
+        description = "High-resolution satellite imagery"
     ),
     TERRAIN(
         id = "terrain",
         displayName = "Terrain",
-        providerName = "OpenTopo Topographic Map",
+        providerName = "Google Terrain",
         isAvailable = true,
-        description = "Topographic features, elevation & terrain contours"
+        description = "Topographic elevation contours, roads & landmarks"
     )
 }
 
@@ -135,13 +135,7 @@ class MapRepository(private val context: Context) {
     }
 
     fun getOverlayTileSourceForStyle(style: MapStyle = _selectedStyle.value): ITileSource? {
-        return if (style == MapStyle.HYBRID) {
-            Log.d("NAVSYNC_MAP", "LAYER_ENABLED layer=hybrid_roads_labels provider=${hybridMapProvider.providerName}")
-            hybridMapProvider.getOverlayTileSource()
-        } else {
-            Log.d("NAVSYNC_MAP", "LAYER_DISABLED layer=hybrid_roads_labels reason=style_not_hybrid")
-            null
-        }
+        return null
     }
 
     fun notifyTileLoading() {
@@ -162,8 +156,8 @@ class MapRepository(private val context: Context) {
     }
 
     private fun loadSavedMapStyle(): MapStyle {
-        val savedId = prefs.getString("selected_map_style", MapStyle.SATELLITE.id) ?: MapStyle.SATELLITE.id
-        return MapStyle.entries.find { it.id == savedId } ?: MapStyle.SATELLITE
+        val savedId = prefs.getString("selected_map_style", MapStyle.STREETS.id) ?: MapStyle.STREETS.id
+        return MapStyle.entries.find { it.id == savedId } ?: MapStyle.STREETS
     }
 
     private fun saveMapStyle(style: MapStyle) {

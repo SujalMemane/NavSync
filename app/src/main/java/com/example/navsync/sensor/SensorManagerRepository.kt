@@ -1,7 +1,10 @@
 package com.example.navsync.sensor
 
 import android.annotation.SuppressLint
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.Sensor
 import android.hardware.SensorEvent
 import android.hardware.SensorEventListener
@@ -44,6 +47,15 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
 
     private var sensorThread: HandlerThread? = null
     private var sensorHandler: Handler? = null
+
+    private var isProviderReceiverRegistered = false
+    private val gpsProviderReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == LocationManager.PROVIDERS_CHANGED_ACTION) {
+                checkGpsProviderState()
+            }
+        }
+    }
 
     // Sensors
     private val accelSensor = sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER)
@@ -141,6 +153,9 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
     // Satellite info tracked via GnssStatus
     private var gnssSatTotal = 0
     private var gnssSatUsedInFix = 0
+    private var gnssSatStrong = 0
+    private var gnssSatModerate = 0
+    private var gnssSatWeak = 0
     private var gnssStatusCallback: GnssStatus.Callback? = null
 
     private val repoScope = CoroutineScope(Dispatchers.Default + SupervisorJob())
@@ -165,11 +180,31 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
 
         startGnss()
         startMonitoringLoops()
+
+        if (!isProviderReceiverRegistered) {
+            try {
+                val filter = IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION)
+                context.registerReceiver(gpsProviderReceiver, filter)
+                isProviderReceiverRegistered = true
+                Log.d("NAVSYNC_GNSS", "Registered PROVIDERS_CHANGED_ACTION receiver")
+            } catch (e: Exception) {
+                Log.e(TAG, "Error registering PROVIDERS_CHANGED receiver: ${e.message}")
+            }
+        }
     }
 
     fun stopSensors() {
         sensorManager.unregisterListener(this)
         stopGnss()
+
+        if (isProviderReceiverRegistered) {
+            try {
+                context.unregisterReceiver(gpsProviderReceiver)
+                isProviderReceiverRegistered = false
+            } catch (e: Exception) {
+                Log.e(TAG, "Error unregistering PROVIDERS_CHANGED receiver: ${e.message}")
+            }
+        }
 
         sensorThread?.quitSafely()
         sensorThread = null
@@ -177,6 +212,53 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
 
         logcatSummaryJob?.cancel()
         healthCheckJob?.cancel()
+    }
+
+    fun isGpsProviderEnabled(): Boolean {
+        return try {
+            locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER) ||
+            locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)
+        } catch (e: Exception) {
+            false
+        }
+    }
+
+    fun checkGpsProviderState(): Boolean {
+        val hasFine = ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_FINE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+        val hasCoarse = ContextCompat.checkSelfPermission(context, android.Manifest.permission.ACCESS_COARSE_LOCATION) == android.content.pm.PackageManager.PERMISSION_GRANTED
+
+        if (!hasFine && !hasCoarse) {
+            _gnssData.value = (_gnssData.value ?: GnssData()).copy(status = GnssStatusState.NO_PERMISSION)
+            return false
+        }
+
+        val isEnabled = isGpsProviderEnabled()
+        Log.d("NAVSYNC_GNSS", "checkGpsProviderState isGpsProviderEnabled=$isEnabled")
+
+        if (!isEnabled) {
+            Log.w("NAVSYNC_GNSS", "GPS / Location hardware switch is OFF")
+            gnssSatTotal = 0
+            gnssSatUsedInFix = 0
+            gnssSatStrong = 0
+            gnssSatModerate = 0
+            gnssSatWeak = 0
+            _gnssData.value = GnssData(
+                status = GnssStatusState.LOCATION_DISABLED,
+                satelliteCount = 0,
+                usedInFix = 0,
+                strongCount = 0,
+                moderateCount = 0,
+                weakCount = 0
+            )
+            return false
+        } else {
+            if (_gnssData.value?.status == GnssStatusState.LOCATION_DISABLED) {
+                Log.i("NAVSYNC_GNSS", "GPS / Location hardware switch turned ON")
+                _gnssData.value = (_gnssData.value ?: GnssData()).copy(status = GnssStatusState.WAITING_FIX)
+                startGnss()
+            }
+            return true
+        }
     }
 
     @SuppressLint("MissingPermission")
@@ -199,7 +281,19 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
 
         if (!gpsEnabled && !netEnabled) {
             Log.w("NAVSYNC_GNSS", "Location services (GPS/Network) disabled on device.")
-            _gnssData.value = GnssData(status = GnssStatusState.LOCATION_DISABLED)
+            gnssSatTotal = 0
+            gnssSatUsedInFix = 0
+            gnssSatStrong = 0
+            gnssSatModerate = 0
+            gnssSatWeak = 0
+            _gnssData.value = GnssData(
+                status = GnssStatusState.LOCATION_DISABLED,
+                satelliteCount = 0,
+                usedInFix = 0,
+                strongCount = 0,
+                moderateCount = 0,
+                weakCount = 0
+            )
             return
         }
 
@@ -220,10 +314,10 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
                 }
             }
 
-            // 2. High Accuracy Fused Location Request (Continuous 1Hz Updates)
+            // 2. High Accuracy Fused Location Request (Continuous 1Hz Updates without delay suppression)
             val locationRequest = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000L)
                 .setMinUpdateIntervalMillis(500L)
-                .setWaitForAccurateLocation(true)
+                .setMinUpdateDistanceMeters(0f)
                 .build()
 
             fusedLocationCallback = object : LocationCallback() {
@@ -258,20 +352,69 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
             fusedLocationClient.requestLocationUpdates(locationRequest, fusedLocationCallback!!, Handler(context.mainLooper).looper)
             Log.d("NAVSYNC_GNSS", "locationCallbackRegistered=true fusedClientInitialized=true")
 
-            // 3. Register GnssStatusCallback for satellite counts
+            // 3. Register GnssStatusCallback for real-time satellite counts
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+                gnssStatusCallback?.let {
+                    try {
+                        locationManager.unregisterGnssStatusCallback(it)
+                    } catch (e: Exception) {
+                        // ignore
+                    }
+                }
                 gnssStatusCallback = object : GnssStatus.Callback() {
                     override fun onSatelliteStatusChanged(status: GnssStatus) {
-                        var total = 0
+                        var actualTracked = 0
                         var used = 0
+                        var strong = 0
+                        var moderate = 0
+                        var weak = 0
                         for (i in 0 until status.satelliteCount) {
-                            total++
-                            if (status.usedInFix(i)) {
-                                used++
+                            val cn0 = status.getCn0DbHz(i)
+                            val isUsed = status.usedInFix(i)
+                            // Only count satellites actually being received (carrier-to-noise > 0 dB-Hz or used in fix)
+                            // Inactive almanac list entries (0 dB-Hz) are not real-time tracked satellites
+                            if (cn0 > 0f || isUsed) {
+                                actualTracked++
+                                if (isUsed) {
+                                    used++
+                                }
+                                when {
+                                    cn0 >= 28f -> strong++
+                                    cn0 >= 18f -> moderate++
+                                    else -> weak++
+                                }
                             }
                         }
-                        gnssSatTotal = total
+                        gnssSatTotal = actualTracked
                         gnssSatUsedInFix = used
+                        gnssSatStrong = strong
+                        gnssSatModerate = moderate
+                        gnssSatWeak = weak
+
+                        Log.d("NAVSYNC_GNSS", "onSatelliteStatusChanged: actualTracked=$actualTracked used=$used strong=$strong mod=$moderate weak=$weak (almanacSize=${status.satelliteCount})")
+
+                        // Emit immediately to StateFlow so UI updates in real-time
+                        val current = _gnssData.value
+                        if (current != null) {
+                            _gnssData.value = current.copy(
+                                satelliteCount = actualTracked,
+                                usedInFix = used,
+                                strongCount = strong,
+                                moderateCount = moderate,
+                                weakCount = weak
+                            )
+                        } else {
+                            _gnssData.value = GnssData(
+                                timestampNanos = System.nanoTime(),
+                                wallClockMillis = 0L,
+                                satelliteCount = actualTracked,
+                                usedInFix = used,
+                                strongCount = strong,
+                                moderateCount = moderate,
+                                weakCount = weak,
+                                status = if (used >= 3) GnssStatusState.GNSS_ACTIVE else GnssStatusState.WAITING_FIX
+                            )
+                        }
                     }
                 }
                 gnssStatusCallback?.let {
@@ -291,7 +434,13 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
             locationManager.removeUpdates(this)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
                 gnssStatusCallback?.let { locationManager.unregisterGnssStatusCallback(it) }
+                gnssStatusCallback = null
             }
+            gnssSatTotal = 0
+            gnssSatUsedInFix = 0
+            gnssSatStrong = 0
+            gnssSatModerate = 0
+            gnssSatWeak = 0
         } catch (e: Exception) {
             Log.e(TAG, "Error stopping GNSS updates: ${e.message}")
         }
@@ -469,9 +618,12 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
         val sAcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && location.hasSpeedAccuracy()) location.speedAccuracyMetersPerSecond else 0f
         val bAcc = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O && location.hasBearingAccuracy()) location.bearingAccuracyDegrees else 0f
 
+        val hasGoodAccuracy = location.accuracy > 0f && location.accuracy <= 35f
+        val hasSufficientSatellites = gnssSatUsedInFix >= 3 || (gnssSatUsedInFix > 0 && location.accuracy <= 50f)
+
         val gnssStatus = when {
-            gnssTracker.checkStale(GNSS_STALE_THRESHOLD_MS) -> GnssStatusState.GNSS_LOST
-            gnssSatUsedInFix > 0 || location.accuracy <= 20f -> GnssStatusState.GNSS_ACTIVE
+            hasSufficientSatellites || hasGoodAccuracy -> GnssStatusState.GNSS_ACTIVE
+            location.accuracy in 35.1f..75f -> GnssStatusState.GNSS_DEGRADED
             else -> GnssStatusState.GNSS_DEGRADED
         }
 
@@ -489,6 +641,9 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
             bearingAccuracy = bAcc,
             satelliteCount = gnssSatTotal,
             usedInFix = gnssSatUsedInFix,
+            strongCount = gnssSatStrong,
+            moderateCount = gnssSatModerate,
+            weakCount = gnssSatWeak,
             provider = location.provider ?: "unknown",
             status = gnssStatus
         )
@@ -500,7 +655,26 @@ class SensorManagerRepository(private val context: Context) : SensorEventListene
     @Deprecated("Deprecated in API 29")
     override fun onStatusChanged(provider: String?, status: Int, extras: Bundle?) {}
 
-    override fun onProviderEnabled(provider: String) {}
+    override fun onProviderEnabled(provider: String) {
+        Log.i("NAVSYNC_GNSS", "onProviderEnabled: $provider")
+        checkGpsProviderState()
+    }
 
-    override fun onProviderDisabled(provider: String) {}
+    override fun onProviderDisabled(provider: String) {
+        Log.w("NAVSYNC_GNSS", "onProviderDisabled: $provider")
+        gnssSatTotal = 0
+        gnssSatUsedInFix = 0
+        gnssSatStrong = 0
+        gnssSatModerate = 0
+        gnssSatWeak = 0
+        _gnssData.value = GnssData(
+            status = GnssStatusState.LOCATION_DISABLED,
+            satelliteCount = 0,
+            usedInFix = 0,
+            strongCount = 0,
+            moderateCount = 0,
+            weakCount = 0
+        )
+        checkGpsProviderState()
+    }
 }

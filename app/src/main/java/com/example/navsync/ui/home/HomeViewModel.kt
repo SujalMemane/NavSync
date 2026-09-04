@@ -22,6 +22,8 @@ import com.example.navsync.services.LocationProvider
 import com.example.navsync.services.NavEngineState
 import com.example.navsync.services.NavigationEngine
 import com.example.navsync.services.NavigationMode
+import com.example.navsync.services.DeadReckoningMlEngine
+import com.example.navsync.services.DeadReckoningPositionEstimator
 import com.example.navsync.services.NavMode
 import com.example.navsync.services.NavigationModeManager
 import com.example.navsync.services.NavigationPosition
@@ -40,6 +42,7 @@ import com.example.navsync.services.RoutingProviderManager
 import com.example.navsync.services.SearchProvider
 import com.example.navsync.services.SearchProviderManager
 import com.example.navsync.services.SearchResultState
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
@@ -48,6 +51,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 
 data class HomeUiState(
@@ -66,15 +70,22 @@ data class HomeUiState(
     val durationStr: String = "00:00:00",
     val satelliteCount: Int = 0,
     val usedInFix: Int = 0,
+    val satStrong: Int = 0,
+    val satModerate: Int = 0,
+    val satWeak: Int = 0,
     val batteryPercent: Int = 100,
     val gnssQuality: GnssSignalQuality = GnssSignalQuality.LOST,
     val gnssStatus: GnssStatusState = GnssStatusState.WAITING_FIX,
     val isTracking: Boolean = true,
     val isMapFollowing: Boolean = true,
+    val isDeadReckoningActive: Boolean = false,
     val trackPoints: List<LocationPoint> = emptyList()
 ) {
+    val hasPosition: Boolean
+        get() = latitude != 0.0 && longitude != 0.0 && latitude.isFinite() && longitude.isFinite()
+
     val hasValidFix: Boolean
-        get() = latitude != 0.0 && longitude != 0.0 && (gnssStatus == GnssStatusState.GNSS_ACTIVE || gnssStatus == GnssStatusState.GNSS_DEGRADED)
+        get() = hasPosition && (gnssStatus == GnssStatusState.GNSS_ACTIVE || gnssStatus == GnssStatusState.GNSS_DEGRADED || gnssStatus == GnssStatusState.DEAD_RECKONING || isDeadReckoningActive)
 }
 
 class HomeViewModel(application: Application) : AndroidViewModel(application) {
@@ -86,6 +97,10 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     val offlineMapRepository = OfflineMapRepository(application)
     val offlineSearchRepository = OfflineSearchRepository(application)
     val navigationModeManager = NavigationModeManager(application)
+
+    // ML Dead Reckoning (IO-VNBD ONNX Model + Kinematic Position Estimator)
+    val deadReckoningMlEngine = DeadReckoningMlEngine(application)
+    val deadReckoningEstimator = DeadReckoningPositionEstimator()
 
     // Domain Abstractions & Services
     val locationProvider: OnlineLocationProvider = OnlineLocationProvider(sensorDataRepository.sensorManagerRepo)
@@ -121,6 +136,8 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLocationCoveredOffline = MutableStateFlow(true)
     val isLocationCoveredOffline: StateFlow<Boolean> = _isLocationCoveredOffline.asStateFlow()
 
+    private var wasDeadReckoningOrGpsLost: Boolean = false
+
     fun focusOnRegionBounds(minLat: Double, minLon: Double, maxLat: Double, maxLon: Double) {
         val bbox = org.osmdroid.util.BoundingBox(maxLat, maxLon, minLat, minLon)
         _focusedBoundingBox.value = bbox
@@ -152,23 +169,120 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     private var searchDebounceJob: Job? = null
     private var activeSessionStartTimeMs: Long = 0L
 
+    // Landmarks and POIs Layer (Google Maps experience)
+    private val _landmarks = MutableStateFlow<List<com.example.navsync.data.db.DbOfflinePlace>>(emptyList())
+    val landmarks: StateFlow<List<com.example.navsync.data.db.DbOfflinePlace>> = _landmarks.asStateFlow()
+
+    private val _selectedLandmark = MutableStateFlow<com.example.navsync.data.db.DbOfflinePlace?>(null)
+    val selectedLandmark: StateFlow<com.example.navsync.data.db.DbOfflinePlace?> = _selectedLandmark.asStateFlow()
+
+    private val _selectedCategory = MutableStateFlow("ALL")
+    val selectedCategory: StateFlow<String> = _selectedCategory.asStateFlow()
+
     init {
         startSensors()
+        loadLandmarks("ALL")
 
+        // 1. Stream real-time phone IMU to IO-VNBD ML Dead Reckoning Engine
+        viewModelScope.launch {
+            var lastAx = 0f
+            var lastAy = 0f
+            var lastAz = 9.81f
+            var lastGx = 0f
+            var lastGy = 0f
+            var lastGz = 0f
+
+            launch {
+                sensorDataRepository.sensorManagerRepo.accelerometerData.collect { acc ->
+                    if (acc != null) {
+                        lastAx = acc.x
+                        lastAy = acc.y
+                        lastAz = acc.z
+                        deadReckoningMlEngine.addSensorData(lastAx, lastAy, lastAz, lastGx, lastGy, lastGz, acc.timestampNanos)
+                    }
+                }
+            }
+
+            launch {
+                sensorDataRepository.sensorManagerRepo.gyroscopeData.collect { gyro ->
+                    if (gyro != null) {
+                        lastGx = gyro.x
+                        lastGy = gyro.y
+                        lastGz = gyro.z
+                        deadReckoningMlEngine.addSensorData(lastAx, lastAy, lastAz, lastGx, lastGy, lastGz, gyro.timestampNanos)
+                    }
+                }
+            }
+        }
+
+        // 2. Synchronize active navigation route with Dead Reckoning Position Estimator
+        viewModelScope.launch {
+            navigationEngine.engineState.collect { engineState ->
+                deadReckoningEstimator.activeRoute = engineState.activeRoute
+                val isNavigating = (engineState.mode == NavigationMode.NAVIGATING || engineState.mode == NavigationMode.REROUTING)
+                navigationModeManager.setNavigating(isNavigating)
+            }
+        }
+
+        // 3. Real-Time GNSS Satellite Telemetry Stream (Updates instantly on every satellite callback)
+        viewModelScope.launch {
+            sensorDataRepository.gnssData.collect { gnss ->
+                val isGpsHardwareEnabled = sensorDataRepository.sensorManagerRepo.isGpsProviderEnabled()
+                val isGpsActive = isGpsHardwareEnabled && gnss != null && gnss.status != GnssStatusState.LOCATION_DISABLED && gnss.status != GnssStatusState.NO_PERMISSION
+                _uiState.update { current ->
+                    if (isGpsActive) {
+                        current.copy(
+                            satelliteCount = gnss.satelliteCount,
+                            usedInFix = gnss.usedInFix,
+                            satStrong = gnss.strongCount,
+                            satModerate = gnss.moderateCount,
+                            satWeak = gnss.weakCount
+                        )
+                    } else {
+                        current.copy(
+                            satelliteCount = 0,
+                            usedInFix = 0,
+                            satStrong = 0,
+                            satModerate = 0,
+                            satWeak = 0
+                        )
+                    }
+                }
+            }
+        }
+
+        // 4. Navigation State & Position Processing
         viewModelScope.launch {
             navigationRepository.navigationState.collect { navState ->
                 val gnss = navState.gnssData
                 val nowMs = System.currentTimeMillis()
-
-                val isStale = if (gnss != null && gnss.wallClockMillis > 0L) {
-                    val ageMs = nowMs - gnss.wallClockMillis
-                    ageMs > 10_000L
-                } else false
+                val isNavigating = (navigationEngine.engineState.value.mode == NavigationMode.NAVIGATING || 
+                                    navigationEngine.engineState.value.mode == NavigationMode.REROUTING)
+                val isGpsHardwareEnabled = sensorDataRepository.sensorManagerRepo.isGpsProviderEnabled()
 
                 val rawStatus = gnss?.status ?: GnssStatusState.WAITING_FIX
-                val status = if (isStale && (rawStatus == GnssStatusState.GNSS_ACTIVE || rawStatus == GnssStatusState.GNSS_DEGRADED)) {
-                    GnssStatusState.GNSS_LOST
-                } else rawStatus
+                val status = when {
+                    !isGpsHardwareEnabled -> GnssStatusState.LOCATION_DISABLED
+                    rawStatus == GnssStatusState.NO_PERMISSION -> GnssStatusState.NO_PERMISSION
+                    else -> {
+                        val ageMs = if (gnss != null && gnss.wallClockMillis > 0L) nowMs - gnss.wallClockMillis else Long.MAX_VALUE
+                        if (isNavigating) {
+                            // During active navigation: if no fix for > 5000ms, consider signal lost (tunnel / jamming blackout)
+                            if (ageMs > 5_000L && (rawStatus == GnssStatusState.GNSS_ACTIVE || rawStatus == GnssStatusState.GNSS_DEGRADED)) {
+                                GnssStatusState.GNSS_LOST
+                            } else {
+                                rawStatus
+                            }
+                        } else {
+                            // Browsing map: allow up to 20 seconds before marking lost to prevent idle flapping
+                            if (ageMs > 20_000L && (rawStatus == GnssStatusState.GNSS_ACTIVE || rawStatus == GnssStatusState.GNSS_DEGRADED)) {
+                                GnssStatusState.GNSS_LOST
+                            } else {
+                                rawStatus
+                            }
+                        }
+                    }
+                }
 
                 val isFixValid = (status == GnssStatusState.GNSS_ACTIVE || status == GnssStatusState.GNSS_DEGRADED)
 
@@ -210,27 +324,65 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
                     source = PositionSource.GNSS
                 )
 
-                navigationEngine.updatePosition(currentNavPos, status)
+                // Sync Dead Reckoning Estimator reference point while GPS is valid
+                if (isFixValid && gnss != null) {
+                    deadReckoningEstimator.syncWithGnss(lat, lon, alt, heading, currentNavPos.speedMps)
+                }
+
+                // Check if Dead Reckoning Mode is active (after 5s blackout)
+                val isDeadReckoning = (navigationModeManager.navigationMode.value == NavMode.DEAD_RECKONING)
+
+                // Track if GPS was lost/disabled or dead reckoning was active, and emit popup when fix is restored
+                if (isDeadReckoning || status == GnssStatusState.LOCATION_DISABLED || status == GnssStatusState.GNSS_LOST) {
+                    wasDeadReckoningOrGpsLost = true
+                } else if (isFixValid && wasDeadReckoningOrGpsLost) {
+                    wasDeadReckoningOrGpsLost = false
+                    deadReckoningMlEngine.reset()
+                    navigationModeManager.notifyGnssRestored()
+                    Log.d("NAVSYNC_GNSS", "GPS fix restored after loss/dead reckoning. Emitted GNSS_RESTORED popup.")
+                }
+
+                // Predict displacement from IMU through ONNX ML model (runs inference & logs to NAVSYNC_ML)
+                val mlDisplacement = deadReckoningMlEngine.predictDisplacement()
+
+                val effectivePos = if (isDeadReckoning) {
+                    deadReckoningEstimator.step(mlDisplacement, heading)
+                } else {
+                    currentNavPos
+                }
+
+                val effectiveStatus = if (isDeadReckoning) GnssStatusState.DEAD_RECKONING else status
+
+                navigationEngine.updatePosition(effectivePos, effectiveStatus)
+
+                val isGpsHardwareActive = isGpsHardwareEnabled && status != GnssStatusState.LOCATION_DISABLED && status != GnssStatusState.NO_PERMISSION
+
+                // Prevent speedometer jitter: clamp any speed under 2.0 km/h or stationary state directly to 0.0 km/h
+                val finalSpeedKmh = if (effectivePos.isStationary || effectivePos.displaySpeedKmh < 2.0f) 0.0f else effectivePos.displaySpeedKmh
 
                 val newState = _uiState.value.copy(
-                    latitude = lat,
-                    longitude = lon,
-                    altitude = alt,
-                    accuracy = acc,
-                    speedKmh = currentNavPos.displaySpeedKmh,
-                    rawSpeedMps = currentNavPos.rawSpeedMps,
-                    derivedSpeedMps = currentNavPos.filteredSpeedMps,
-                    isStationary = currentNavPos.isStationary,
-                    displacementMeters = currentNavPos.displacementMeters,
+                    latitude = effectivePos.latitude,
+                    longitude = effectivePos.longitude,
+                    altitude = effectivePos.altitude,
+                    accuracy = effectivePos.accuracy,
+                    speedKmh = finalSpeedKmh,
+                    rawSpeedMps = if (finalSpeedKmh == 0.0f) 0.0f else effectivePos.rawSpeedMps,
+                    derivedSpeedMps = if (finalSpeedKmh == 0.0f) 0.0f else effectivePos.filteredSpeedMps,
+                    isStationary = effectivePos.isStationary || finalSpeedKmh == 0.0f,
+                    displacementMeters = effectivePos.displacementMeters,
                     headingDegrees = heading,
                     cardinalDirection = cardinal,
                     distanceKm = navState.distanceKm,
                     durationStr = navState.durationFormatted,
-                    satelliteCount = gnss?.satelliteCount ?: 0,
-                    usedInFix = gnss?.usedInFix ?: 0,
+                    satelliteCount = if (isGpsHardwareActive && gnss != null) gnss.satelliteCount else 0,
+                    usedInFix = if (isGpsHardwareActive && gnss != null) gnss.usedInFix else 0,
+                    satStrong = if (isGpsHardwareActive && gnss != null) gnss.strongCount else 0,
+                    satModerate = if (isGpsHardwareActive && gnss != null) gnss.moderateCount else 0,
+                    satWeak = if (isGpsHardwareActive && gnss != null) gnss.weakCount else 0,
                     batteryPercent = navState.batteryPercent,
-                    gnssQuality = if (isStale) GnssSignalQuality.LOST else navState.gnssQuality,
-                    gnssStatus = status,
+                    gnssQuality = if (isDeadReckoning) GnssSignalQuality.FAIR else if (!isFixValid) GnssSignalQuality.LOST else navState.gnssQuality,
+                    gnssStatus = effectiveStatus,
+                    isDeadReckoningActive = isDeadReckoning,
                     isTracking = navState.isTracking,
                     trackPoints = navState.trackPoints
                 )
@@ -302,28 +454,50 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun cancelNavigation() {
-        viewModelScope.launch {
-            val engineState = navigationEngine.engineState.value
-            val activeRoute = engineState.activeRoute
+        Log.d("NAVSYNC_UI", "cancelNavigation invoked mode=${navigationEngine.engineState.value.mode}")
+        val engineState = navigationEngine.engineState.value
+        val activeRoute = engineState.activeRoute
+        val wasNavigating = (engineState.mode == NavigationMode.NAVIGATING ||
+                engineState.mode == NavigationMode.REROUTING ||
+                engineState.mode == NavigationMode.ARRIVED)
+        val destName = engineState.destinationPlace?.displayName ?: "Destination"
+        val distKm = (activeRoute?.distanceMeters ?: 0.0) / 1000.0
+        val isArrived = (engineState.mode == NavigationMode.ARRIVED)
+        val sessionStart = activeSessionStartTimeMs
 
-            if (engineState.mode == NavigationMode.NAVIGATING || engineState.mode == NavigationMode.ARRIVED) {
-                val record = TripSessionRecord(
-                    sessionId = "session_${System.currentTimeMillis()}",
-                    startTimeMs = if (activeSessionStartTimeMs > 0) activeSessionStartTimeMs else System.currentTimeMillis() - 300_000L,
-                    endTimeMs = System.currentTimeMillis(),
-                    originName = "Current Location",
-                    destinationName = engineState.destinationPlace?.displayName ?: "Destination",
-                    distanceKm = (activeRoute?.distanceMeters ?: 0.0) / 1000.0,
-                    durationSeconds = ((System.currentTimeMillis() - activeSessionStartTimeMs) / 1000L).coerceAtLeast(1L),
-                    status = if (engineState.mode == NavigationMode.ARRIVED) "ARRIVED" else "CANCELLED"
-                )
-                dbHelper.saveTripSession(record)
+        // 1. Immediately reset navigation engine on main thread
+        navigationEngine.stopNavigation()
+
+        // 2. Immediately reset search and view model state
+        _searchQuery.value = ""
+        _searchResults.value = emptyList()
+        _searchResultState.value = SearchResultState.NoResults
+        _focusedBoundingBox.value = null
+        _isSearching.value = false
+
+        // 3. Reset map following
+        setMapFollowing(true)
+
+        // 4. Save trip session asynchronously in background without blocking UI
+        if (wasNavigating) {
+            viewModelScope.launch(Dispatchers.IO) {
+                try {
+                    val record = TripSessionRecord(
+                        sessionId = "session_${System.currentTimeMillis()}",
+                        startTimeMs = if (sessionStart > 0) sessionStart else System.currentTimeMillis() - 300_000L,
+                        endTimeMs = System.currentTimeMillis(),
+                        originName = "Current Location",
+                        destinationName = destName,
+                        distanceKm = distKm,
+                        durationSeconds = ((System.currentTimeMillis() - sessionStart) / 1000L).coerceAtLeast(1L),
+                        status = if (isArrived) "ARRIVED" else "CANCELLED"
+                    )
+                    dbHelper.saveTripSession(record)
+                    Log.d("NAVSYNC_UI", "Trip session saved successfully on cancel")
+                } catch (e: Exception) {
+                    Log.e("NAVSYNC_UI", "Error saving trip session on cancel: ${e.message}", e)
+                }
             }
-
-            navigationEngine.stopNavigation()
-            _searchQuery.value = ""
-            _searchResults.value = emptyList()
-            _searchResultState.value = SearchResultState.NoResults
         }
     }
 
@@ -339,9 +513,46 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         Log.d("NAVSYNC_UI", "recenterMap following=true")
     }
 
+    fun loadLandmarks(category: String = _selectedCategory.value) {
+        viewModelScope.launch {
+            val places = if (category.equals("ALL", ignoreCase = true)) {
+                offlineMapRepository.getAllLandmarks()
+            } else {
+                offlineMapRepository.getLandmarksByCategory(category)
+            }
+            _landmarks.value = places
+        }
+    }
+
+    fun setLandmarkCategory(category: String) {
+        _selectedCategory.value = category
+        loadLandmarks(category)
+    }
+
+    fun selectLandmark(landmark: com.example.navsync.data.db.DbOfflinePlace?) {
+        _selectedLandmark.value = landmark
+    }
+
+    fun routeToLandmark(landmark: com.example.navsync.data.db.DbOfflinePlace) {
+        _selectedLandmark.value = null
+        val placeResult = PlaceResult(
+            displayName = landmark.name,
+            shortName = landmark.name,
+            address = landmark.address,
+            latitude = landmark.latitude,
+            longitude = landmark.longitude
+        )
+        selectPlace(placeResult)
+    }
+
     private fun getCardinalDirection(bearing: Float): String {
         val directions = arrayOf("N", "NE", "E", "SE", "S", "SW", "W", "NW", "N")
         val index = Math.round((bearing % 360) / 45.0).toInt()
         return directions[index]
+    }
+
+    override fun onCleared() {
+        super.onCleared()
+        deadReckoningMlEngine.release()
     }
 }

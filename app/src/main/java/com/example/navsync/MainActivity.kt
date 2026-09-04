@@ -62,10 +62,10 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             NavSyncTheme {
-                var currentRoute by remember { mutableStateOf("dashboard") }
+                var currentRoute by remember { mutableStateOf("home") }
 
                 when (currentRoute) {
-                    "dashboard" -> {
+                    "home", "dashboard" -> {
                         HomeScreen(
                             viewModel = homeViewModel,
                             onNavigateTab = { route -> currentRoute = route }

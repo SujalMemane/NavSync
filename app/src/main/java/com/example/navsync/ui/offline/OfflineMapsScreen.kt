@@ -28,6 +28,7 @@ import com.example.navsync.data.db.OfflineRegionRecord
 import com.example.navsync.repository.OfflineMapRepository
 import com.example.navsync.ui.home.HomeViewModel
 import com.example.navsync.ui.home.NavSyncBottomBar
+import com.example.navsync.ui.theme.*
 import kotlinx.coroutines.launch
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -45,33 +46,25 @@ fun OfflineMapsScreen(
     val downloadedRegions by offlineRepository.downloadedRegions.collectAsState()
     val scope = rememberCoroutineScope()
 
-    val darkBg = Color(0xFF030712)
-    val cardBg = Color(0xFF0F172A)
-    val borderNavy = Color(0xFF334155)
-    val accentBlue = Color(0xFF00B0FF)
-    val accentNavy = Color(0xFF2563EB)
-    val textPrimary = Color(0xFFFFFFFF)
-    val textMuted = Color(0xFF94A3B8)
-
     val totalStorageBytes = downloadedRegions.sumOf { it.sizeBytes }
     val totalStorageMb = String.format(Locale.US, "%.1f MB", totalStorageBytes / (1024.0 * 1024.0))
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Offline Maps", color = textPrimary, fontWeight = FontWeight.Bold) },
+                title = { Text("Offline Maps", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp) },
                 navigationIcon = {
                     IconButton(onClick = onBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = textPrimary)
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
                     }
                 },
-                colors = TopAppBarDefaults.topAppBarColors(containerColor = darkBg)
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
             )
         },
         bottomBar = {
             NavSyncBottomBar(currentRoute = "settings", onNavigateTab = onNavigateTab)
         },
-        containerColor = darkBg
+        containerColor = DarkBg
     ) { innerPadding ->
         Column(
             modifier = Modifier
@@ -81,19 +74,28 @@ fun OfflineMapsScreen(
         ) {
             // Header Description Card
             Card(
-                colors = CardDefaults.cardColors(containerColor = cardBg),
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
                 shape = RoundedCornerShape(16.dp),
                 modifier = Modifier
                     .fillMaxWidth()
-                    .border(1.dp, borderNavy, RoundedCornerShape(16.dp))
+                    .border(1.dp, BorderDark, RoundedCornerShape(16.dp))
             ) {
                 Column(modifier = Modifier.padding(16.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Map, contentDescription = null, tint = accentBlue, modifier = Modifier.size(24.dp))
+                        Box(
+                            modifier = Modifier
+                                .size(40.dp)
+                                .clip(CircleShape)
+                                .background(DarkGreenBg)
+                                .border(1.dp, BorderGreenSubtle, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Map, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(22.dp))
+                        }
                         Spacer(modifier = Modifier.width(12.dp))
                         Column {
-                            Text("OFFLINE MAPS", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                            Text("Download maps to navigate without internet", color = textMuted, fontSize = 12.sp)
+                            Text("OFFLINE MAPS", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                            Text("Download maps to navigate without internet", color = TextSecondary, fontSize = 12.sp)
                         }
                     }
 
@@ -101,15 +103,15 @@ fun OfflineMapsScreen(
 
                     Button(
                         onClick = onNavigateToDownload,
-                        colors = ButtonDefaults.buttonColors(containerColor = accentNavy),
-                        shape = RoundedCornerShape(24.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = TextDark),
+                        shape = RoundedCornerShape(14.dp),
                         modifier = Modifier
                             .fillMaxWidth()
                             .height(46.dp)
                     ) {
-                        Icon(Icons.Default.Download, contentDescription = null, tint = Color.White)
+                        Icon(Icons.Default.Download, contentDescription = null, tint = TextDark)
                         Spacer(modifier = Modifier.width(8.dp))
-                        Text("Download New Area", color = Color.White, fontWeight = FontWeight.Bold, fontSize = 14.sp)
+                        Text("Download New Area", color = TextDark, fontWeight = FontWeight.Bold, fontSize = 14.sp)
                     }
                 }
             }
@@ -122,8 +124,8 @@ fun OfflineMapsScreen(
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Text("DOWNLOADED MAPS", color = textMuted, fontSize = 12.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
-                Text("Storage used: $totalStorageMb", color = accentBlue, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                Text("DOWNLOADED MAPS", color = NeonGreen, fontSize = 11.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.sp)
+                Text("Storage used: $totalStorageMb", color = TextSecondary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
 
             Spacer(modifier = Modifier.height(10.dp))
@@ -134,15 +136,25 @@ fun OfflineMapsScreen(
                         .fillMaxWidth()
                         .weight(1f)
                         .clip(RoundedCornerShape(16.dp))
-                        .background(cardBg)
-                        .border(1.dp, borderNavy, RoundedCornerShape(16.dp)),
+                        .background(DarkSurface)
+                        .border(1.dp, BorderDark, RoundedCornerShape(16.dp)),
                     contentAlignment = Alignment.Center
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                        Icon(Icons.Default.Map, contentDescription = null, tint = textMuted, modifier = Modifier.size(48.dp))
-                        Spacer(modifier = Modifier.height(12.dp))
-                        Text("No offline maps", color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
-                        Text("Download an area before using offline navigation.", color = textMuted, fontSize = 12.sp)
+                        Box(
+                            modifier = Modifier
+                                .size(56.dp)
+                                .clip(CircleShape)
+                                .background(DarkGreenBg)
+                                .border(1.dp, BorderGreenSubtle, CircleShape),
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(Icons.Default.Map, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(28.dp))
+                        }
+                        Spacer(modifier = Modifier.height(14.dp))
+                        Text("No offline maps", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text("Download an area before using offline navigation.", color = TextSecondary, fontSize = 12.sp)
                     }
                 }
             } else {
@@ -176,22 +188,16 @@ fun DownloadedRegionCard(
     onViewMap: () -> Unit,
     onDelete: () -> Unit
 ) {
-    val cardBg = Color(0xFF0F172A)
-    val borderNavy = Color(0xFF334155)
-    val textPrimary = Color(0xFFFFFFFF)
-    val textMuted = Color(0xFF94A3B8)
-    val accentBlue = Color(0xFF00B0FF)
-
     val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.US)
     val dateStr = dateFormat.format(Date(region.downloadTimeMs))
     val sizeMb = String.format(Locale.US, "%.1f MB", region.sizeBytes / (1024.0 * 1024.0))
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = cardBg),
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
         shape = RoundedCornerShape(14.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .border(1.dp, borderNavy, RoundedCornerShape(14.dp))
+            .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
     ) {
         Row(
             modifier = Modifier
@@ -202,16 +208,16 @@ fun DownloadedRegionCard(
         ) {
             Column(modifier = Modifier.weight(1f)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(region.name, color = textPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
+                    Text(region.name, color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 15.sp)
                     Spacer(modifier = Modifier.width(8.dp))
-                    Icon(Icons.Default.CheckCircle, contentDescription = "Downloaded", tint = Color(0xFF10B981), modifier = Modifier.size(16.dp))
+                    Icon(Icons.Default.CheckCircle, contentDescription = "Downloaded", tint = NeonGreen, modifier = Modifier.size(16.dp))
                 }
 
                 Spacer(modifier = Modifier.height(4.dp))
 
                 Text(
                     text = "Downloaded • $sizeMb • $dateStr",
-                    color = textMuted,
+                    color = TextSecondary,
                     fontSize = 12.sp
                 )
             }
@@ -219,18 +225,22 @@ fun DownloadedRegionCard(
             Row(verticalAlignment = Alignment.CenterVertically) {
                 OutlinedButton(
                     onClick = onViewMap,
-                    shape = RoundedCornerShape(20.dp),
-                    border = BorderStroke(1.dp, accentBlue),
-                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 4.dp),
+                    shape = RoundedCornerShape(12.dp),
+                    border = BorderStroke(1.dp, BorderGreenSubtle),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        containerColor = DarkGreenBg,
+                        contentColor = NeonGreen
+                    ),
+                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
                     modifier = Modifier.height(34.dp)
                 ) {
-                    Icon(Icons.Default.Map, contentDescription = null, tint = accentBlue, modifier = Modifier.size(14.dp))
+                    Icon(Icons.Default.Map, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(14.dp))
                     Spacer(modifier = Modifier.width(4.dp))
-                    Text("View Map", color = accentBlue, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                    Text("View Map", color = NeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
                 }
 
                 IconButton(onClick = onDelete) {
-                    Icon(Icons.Default.Delete, contentDescription = "Delete Map", tint = Color(0xFFEF4444))
+                    Icon(Icons.Default.Delete, contentDescription = "Delete Map", tint = AccentRed)
                 }
             }
         }

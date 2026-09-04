@@ -1,5 +1,6 @@
 package com.example.navsync.ui.home
 
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -7,23 +8,24 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Layers
-import androidx.compose.material.icons.filled.Map
-import androidx.compose.material.icons.filled.Satellite
-import androidx.compose.material.icons.filled.Terrain
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.navsync.R
 import com.example.navsync.repository.MapStyle
+import com.example.navsync.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -32,15 +34,10 @@ fun MapStyleBottomSheet(
     onSelectStyle: (MapStyle) -> Unit,
     onDismiss: () -> Unit
 ) {
-    val darkCardBg = Color(0xFF0F172A)
-    val borderNavy = Color(0xFF334155)
-    val accentBlue = Color(0xFF00B0FF)
-    val textPrimary = Color(0xFFFFFFFF)
-    val textMuted = Color(0xFF94A3B8)
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        containerColor = darkCardBg,
+        containerColor = DarkElevated,
+        shape = RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp),
         dragHandle = {
             Box(
                 modifier = Modifier
@@ -48,7 +45,7 @@ fun MapStyleBottomSheet(
                     .width(40.dp)
                     .height(4.dp)
                     .clip(RoundedCornerShape(2.dp))
-                    .background(borderNavy)
+                    .background(BorderDark)
             )
         }
     ) {
@@ -56,7 +53,7 @@ fun MapStyleBottomSheet(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 20.dp, vertical = 8.dp)
-                .padding(bottom = 24.dp)
+                .padding(bottom = 28.dp)
         ) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
@@ -64,46 +61,55 @@ fun MapStyleBottomSheet(
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        imageVector = Icons.Default.Layers,
-                        contentDescription = "Map Style",
-                        tint = accentBlue,
-                        modifier = Modifier.size(24.dp)
-                    )
-                    Spacer(modifier = Modifier.width(10.dp))
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .clip(CircleShape)
+                            .background(DarkSurface)
+                            .border(1.dp, BorderDark, CircleShape),
+                        contentAlignment = Alignment.Center
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Layers,
+                            contentDescription = "Map Style",
+                            tint = TextPrimary,
+                            modifier = Modifier.size(20.dp)
+                        )
+                    }
+                    Spacer(modifier = Modifier.width(12.dp))
                     Text(
-                        text = "Map style",
-                        color = textPrimary,
+                        text = "Map Style",
+                        color = TextPrimary,
                         fontSize = 18.sp,
                         fontWeight = FontWeight.Bold
                     )
                 }
 
                 IconButton(onClick = onDismiss) {
-                    Icon(Icons.Default.Close, contentDescription = "Close", tint = textMuted)
+                    Icon(Icons.Default.Close, contentDescription = "Close", tint = TextMuted)
                 }
             }
 
             Text(
-                text = "Choose your preferred map visualization mode",
-                color = textMuted,
+                text = "Choose your preferred map visualization layer",
+                color = TextSecondary,
                 fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 16.dp)
+                modifier = Modifier.padding(top = 4.dp, bottom = 16.dp)
             )
 
-            // 2x2 Grid of Map Styles
-            Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            // 2x2 Grid of Map Styles with Custom Photo Background Previews
+            Column(verticalArrangement = Arrangement.spacedBy(14.dp)) {
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     MapStyleCard(
                         modifier = Modifier.weight(1f),
-                        style = MapStyle.SATELLITE,
-                        icon = Icons.Default.Satellite,
-                        isSelected = selectedStyle == MapStyle.SATELLITE,
+                        style = MapStyle.HYBRID,
+                        previewResId = R.drawable.map_preview_hybrid,
+                        isSelected = selectedStyle == MapStyle.HYBRID,
                         onSelect = {
-                            onSelectStyle(MapStyle.SATELLITE)
+                            onSelectStyle(MapStyle.HYBRID)
                             onDismiss()
                         }
                     )
@@ -111,7 +117,7 @@ fun MapStyleBottomSheet(
                     MapStyleCard(
                         modifier = Modifier.weight(1f),
                         style = MapStyle.STREETS,
-                        icon = Icons.Default.Map,
+                        previewResId = R.drawable.map_preview_streets,
                         isSelected = selectedStyle == MapStyle.STREETS,
                         onSelect = {
                             onSelectStyle(MapStyle.STREETS)
@@ -122,15 +128,15 @@ fun MapStyleBottomSheet(
 
                 Row(
                     modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp)
+                    horizontalArrangement = Arrangement.spacedBy(14.dp)
                 ) {
                     MapStyleCard(
                         modifier = Modifier.weight(1f),
-                        style = MapStyle.HYBRID,
-                        icon = Icons.Default.Layers,
-                        isSelected = selectedStyle == MapStyle.HYBRID,
+                        style = MapStyle.SATELLITE,
+                        previewResId = R.drawable.map_preview_satellite,
+                        isSelected = selectedStyle == MapStyle.SATELLITE,
                         onSelect = {
-                            onSelectStyle(MapStyle.HYBRID)
+                            onSelectStyle(MapStyle.SATELLITE)
                             onDismiss()
                         }
                     )
@@ -138,7 +144,7 @@ fun MapStyleBottomSheet(
                     MapStyleCard(
                         modifier = Modifier.weight(1f),
                         style = MapStyle.TERRAIN,
-                        icon = Icons.Default.Terrain,
+                        previewResId = R.drawable.map_preview_terrain,
                         isSelected = selectedStyle == MapStyle.TERRAIN,
                         onSelect = {
                             onSelectStyle(MapStyle.TERRAIN)
@@ -155,77 +161,88 @@ fun MapStyleBottomSheet(
 fun MapStyleCard(
     modifier: Modifier = Modifier,
     style: MapStyle,
-    icon: ImageVector,
+    previewResId: Int,
     isSelected: Boolean,
     onSelect: () -> Unit
 ) {
-    val cardBg = if (isSelected) Color(0xFF1E293B) else Color(0xFF0B132B)
-    val borderColor = if (isSelected) Color(0xFF00B0FF) else Color(0xFF334155)
-    val textPrimary = Color(0xFFFFFFFF)
-    val textMuted = Color(0xFF94A3B8)
-    val accentBlue = Color(0xFF00B0FF)
+    val borderColor = if (isSelected) ElectricBlue else BorderDark
+    val borderWidth = if (isSelected) 1.5.dp else 1.dp
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = cardBg),
-        shape = RoundedCornerShape(16.dp),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = DarkSurface),
         modifier = modifier
             .fillMaxWidth()
-            .height(110.dp)
+            .height(125.dp)
             .border(
-                width = if (isSelected) 2.dp else 1.dp,
+                width = borderWidth,
                 color = borderColor,
-                shape = RoundedCornerShape(16.dp)
+                shape = RoundedCornerShape(12.dp)
             )
             .clickable(onClick = onSelect)
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(12.dp)
-        ) {
-            Column(
-                modifier = Modifier.align(Alignment.TopStart)
-            ) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 1. Custom preview photo as full card background
+            Image(
+                painter = painterResource(id = previewResId),
+                contentDescription = style.displayName,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize()
+            )
+
+            // 2. Gradient scrim for high readability over light/dark satellite textures
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Black.copy(alpha = 0.20f),
+                                Color.Black.copy(alpha = 0.50f),
+                                Color.Black.copy(alpha = 0.90f)
+                            )
+                        )
+                    )
+            )
+
+            // 3. Selection badge on top-right
+            if (isSelected) {
                 Box(
                     modifier = Modifier
-                        .size(36.dp)
+                        .padding(8.dp)
+                        .size(24.dp)
                         .clip(CircleShape)
-                        .background(if (isSelected) accentBlue.copy(alpha = 0.2f) else Color(0xFF1E293B)),
+                        .background(ElectricBlue)
+                        .align(Alignment.TopEnd),
                     contentAlignment = Alignment.Center
                 ) {
                     Icon(
-                        imageVector = icon,
-                        contentDescription = style.displayName,
-                        tint = if (isSelected) accentBlue else textMuted,
-                        modifier = Modifier.size(20.dp)
+                        imageVector = Icons.Default.Check,
+                        contentDescription = "Selected",
+                        tint = Color.White,
+                        modifier = Modifier.size(15.dp)
                     )
                 }
+            }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
+            // 4. Style Title & Provider Name positioned neatly at bottom
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(horizontal = 12.dp, vertical = 10.dp)
+            ) {
                 Text(
                     text = style.displayName,
-                    color = textPrimary,
+                    color = if (isSelected) ElectricBlue else TextPrimary,
                     fontSize = 15.sp,
                     fontWeight = FontWeight.Bold
                 )
 
                 Text(
                     text = style.providerName,
-                    color = textMuted,
+                    color = TextSecondary,
                     fontSize = 10.sp,
                     maxLines = 1
-                )
-            }
-
-            if (isSelected) {
-                Icon(
-                    imageVector = Icons.Default.CheckCircle,
-                    contentDescription = "Selected",
-                    tint = accentBlue,
-                    modifier = Modifier
-                        .size(22.dp)
-                        .align(Alignment.TopEnd)
                 )
             }
         }

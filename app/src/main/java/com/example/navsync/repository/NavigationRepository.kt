@@ -42,6 +42,11 @@ class NavigationRepository(
 
     init {
         scope.launch {
+            sensorDataRepository.gnssData.collect {
+                updateState()
+            }
+        }
+        scope.launch {
             while (isActive) {
                 delay(500L)
                 updateState()
