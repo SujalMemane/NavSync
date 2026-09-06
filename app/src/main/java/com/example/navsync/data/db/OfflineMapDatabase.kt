@@ -298,6 +298,60 @@ class OfflineMapDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_
         }
     }
 
+    suspend fun getAllNodes(): List<DbRoadNode> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<DbRoadNode>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_NODES, null, null, null, null, null, null)
+            cursor.use { c ->
+                val idIdx = c.getColumnIndexOrThrow("node_id")
+                val regIdx = c.getColumnIndexOrThrow("region_id")
+                val latIdx = c.getColumnIndexOrThrow("latitude")
+                val lonIdx = c.getColumnIndexOrThrow("longitude")
+                while (c.moveToNext()) {
+                    list.add(
+                        DbRoadNode(
+                            nodeId = c.getLong(idIdx),
+                            regionId = c.getString(regIdx),
+                            latitude = c.getDouble(latIdx),
+                            longitude = c.getDouble(lonIdx)
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching road nodes: ${e.message}", e)
+        }
+        return@withContext list
+    }
+
+    suspend fun getNodesForRegion(regionId: String): List<DbRoadNode> = withContext(Dispatchers.IO) {
+        val list = mutableListOf<DbRoadNode>()
+        try {
+            val db = readableDatabase
+            val cursor = db.query(TABLE_NODES, null, "region_id = ?", arrayOf(regionId), null, null, null)
+            cursor.use { c ->
+                val idIdx = c.getColumnIndexOrThrow("node_id")
+                val regIdx = c.getColumnIndexOrThrow("region_id")
+                val latIdx = c.getColumnIndexOrThrow("latitude")
+                val lonIdx = c.getColumnIndexOrThrow("longitude")
+                while (c.moveToNext()) {
+                    list.add(
+                        DbRoadNode(
+                            nodeId = c.getLong(idIdx),
+                            regionId = c.getString(regIdx),
+                            latitude = c.getDouble(latIdx),
+                            longitude = c.getDouble(lonIdx)
+                        )
+                    )
+                }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Error fetching road nodes for region: ${e.message}", e)
+        }
+        return@withContext list
+    }
+
     suspend fun getAllSegments(): List<DbRoadSegment> = withContext(Dispatchers.IO) {
         val list = mutableListOf<DbRoadSegment>()
         try {
@@ -369,19 +423,25 @@ class OfflineMapDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_
 
     suspend fun searchOfflinePlaces(query: String): List<DbOfflinePlace> = withContext(Dispatchers.IO) {
         val list = mutableListOf<DbOfflinePlace>()
+        val qClean = query.trim()
+        if (qClean.isEmpty()) return@withContext list
+
         try {
             val db = readableDatabase
-            val cursor = db.query(
+            val seenNames = mutableSetOf<String>()
+
+            // 1. Search TABLE_PLACES by name, address, or place_type
+            val placeCursor = db.query(
                 TABLE_PLACES,
                 null,
-                "name LIKE ?",
-                arrayOf("%$query%"),
+                "name LIKE ? OR address LIKE ? OR place_type LIKE ?",
+                arrayOf("%$qClean%", "%$qClean%", "%$qClean%"),
                 null,
                 null,
                 "name ASC",
-                "20"
+                "25"
             )
-            cursor.use { c ->
+            placeCursor.use { c ->
                 val idIdx = c.getColumnIndexOrThrow("id")
                 val regIdx = c.getColumnIndexOrThrow("region_id")
                 val nameIdx = c.getColumnIndexOrThrow("name")
@@ -391,17 +451,184 @@ class OfflineMapDatabase(context: Context) : SQLiteOpenHelper(context, DATABASE_
                 val typeIdx = c.getColumnIndexOrThrow("place_type")
 
                 while (c.moveToNext()) {
+                    val name = c.getString(nameIdx)
+                    seenNames.add(name.lowercase())
                     list.add(
                         DbOfflinePlace(
                             placeId = c.getLong(idIdx),
                             regionId = c.getString(regIdx),
-                            name = c.getString(nameIdx),
+                            name = name,
                             address = c.getString(addrIdx) ?: "",
                             latitude = c.getDouble(latIdx),
                             longitude = c.getDouble(lonIdx),
                             placeType = c.getString(typeIdx) ?: "poi"
                         )
                     )
+                }
+            }
+
+            // 2. Search TABLE_REGIONS by region name (e.g. "Pune", "Baner", or custom region name)
+            val regCursor = db.query(
+                TABLE_REGIONS,
+                null,
+                "name LIKE ?",
+                arrayOf("%$qClean%"),
+                null,
+                null,
+                "name ASC",
+                "10"
+            )
+            regCursor.use { c ->
+                val idIdx = c.getColumnIndexOrThrow("id")
+                val regIdx = c.getColumnIndexOrThrow("region_id")
+                val nameIdx = c.getColumnIndexOrThrow("name")
+                val minLatIdx = c.getColumnIndexOrThrow("min_lat")
+                val minLonIdx = c.getColumnIndexOrThrow("min_lon")
+                val maxLatIdx = c.getColumnIndexOrThrow("max_lat")
+                val maxLonIdx = c.getColumnIndexOrThrow("max_lon")
+
+                while (c.moveToNext()) {
+                    val name = c.getString(nameIdx)
+                    val centerName = "$name (Center)"
+                    if (!seenNames.contains(centerName.lowercase())) {
+                        seenNames.add(centerName.lowercase())
+                        val minLat = c.getDouble(minLatIdx)
+                        val minLon = c.getDouble(minLonIdx)
+                        val maxLat = c.getDouble(maxLatIdx)
+                        val maxLon = c.getDouble(maxLonIdx)
+                        list.add(
+                            DbOfflinePlace(
+                                placeId = 90000L + c.getLong(idIdx),
+                                regionId = c.getString(regIdx),
+                                name = centerName,
+                                address = "Downloaded Offline Map Area",
+                                latitude = (minLat + maxLat) / 2.0,
+                                longitude = (minLon + maxLon) / 2.0,
+                                placeType = "landmark"
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 3. Search TABLE_SEGMENTS by road name (e.g. "NH 48", "Main Street", "Station Road")
+            val segCursor = db.query(
+                TABLE_SEGMENTS,
+                arrayOf("segment_id", "region_id", "road_name", "start_lat", "start_lon", "end_lat", "end_lon"),
+                "road_name LIKE ? AND road_name IS NOT NULL AND road_name != ''",
+                arrayOf("%$qClean%"),
+                "road_name", // Group by road name to avoid duplicate segments
+                null,
+                "road_name ASC",
+                "15"
+            )
+            segCursor.use { c ->
+                val segIdIdx = c.getColumnIndexOrThrow("segment_id")
+                val regIdx = c.getColumnIndexOrThrow("region_id")
+                val nameIdx = c.getColumnIndexOrThrow("road_name")
+                val sLatIdx = c.getColumnIndexOrThrow("start_lat")
+                val sLonIdx = c.getColumnIndexOrThrow("start_lon")
+                val eLatIdx = c.getColumnIndexOrThrow("end_lat")
+                val eLonIdx = c.getColumnIndexOrThrow("end_lon")
+
+                while (c.moveToNext()) {
+                    val roadName = c.getString(nameIdx)
+                    if (!seenNames.contains(roadName.lowercase())) {
+                        seenNames.add(roadName.lowercase())
+                        val sLat = c.getDouble(sLatIdx)
+                        val sLon = c.getDouble(sLonIdx)
+                        val eLat = c.getDouble(eLatIdx)
+                        val eLon = c.getDouble(eLonIdx)
+                        list.add(
+                            DbOfflinePlace(
+                                placeId = 80000L + c.getLong(segIdIdx),
+                                regionId = c.getString(regIdx),
+                                name = roadName,
+                                address = "Road / Highway in Offline Map",
+                                latitude = (sLat + eLat) / 2.0,
+                                longitude = (sLon + eLon) / 2.0,
+                                placeType = "highway"
+                            )
+                        )
+                    }
+                }
+            }
+
+            // 4. Multi-word search token match if direct match was empty
+            if (list.isEmpty()) {
+                val words = qClean.split(Regex("\\s+")).filter { it.length > 1 }
+                if (words.size > 1) {
+                    for (word in words) {
+                        val wordCursor = db.query(
+                            TABLE_PLACES,
+                            null,
+                            "name LIKE ? OR address LIKE ? OR place_type LIKE ?",
+                            arrayOf("%$word%", "%$word%", "%$word%"),
+                            null,
+                            null,
+                            "name ASC",
+                            "10"
+                        )
+                        wordCursor.use { c ->
+                            val idIdx = c.getColumnIndexOrThrow("id")
+                            val regIdx = c.getColumnIndexOrThrow("region_id")
+                            val nameIdx = c.getColumnIndexOrThrow("name")
+                            val addrIdx = c.getColumnIndexOrThrow("address")
+                            val latIdx = c.getColumnIndexOrThrow("latitude")
+                            val lonIdx = c.getColumnIndexOrThrow("longitude")
+                            val typeIdx = c.getColumnIndexOrThrow("place_type")
+
+                            while (c.moveToNext()) {
+                                val name = c.getString(nameIdx)
+                                if (!seenNames.contains(name.lowercase())) {
+                                    seenNames.add(name.lowercase())
+                                    list.add(
+                                        DbOfflinePlace(
+                                            placeId = c.getLong(idIdx),
+                                            regionId = c.getString(regIdx),
+                                            name = name,
+                                            address = c.getString(addrIdx) ?: "",
+                                            latitude = c.getDouble(latIdx),
+                                            longitude = c.getDouble(lonIdx),
+                                            placeType = c.getString(typeIdx) ?: "poi"
+                                        )
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 5. Fallback: If no exact search matched, return all available places from downloaded regions
+            if (list.isEmpty()) {
+                val allCursor = db.query(TABLE_PLACES, null, null, null, null, null, "id ASC", "25")
+                allCursor.use { c ->
+                    val idIdx = c.getColumnIndexOrThrow("id")
+                    val regIdx = c.getColumnIndexOrThrow("region_id")
+                    val nameIdx = c.getColumnIndexOrThrow("name")
+                    val addrIdx = c.getColumnIndexOrThrow("address")
+                    val latIdx = c.getColumnIndexOrThrow("latitude")
+                    val lonIdx = c.getColumnIndexOrThrow("longitude")
+                    val typeIdx = c.getColumnIndexOrThrow("place_type")
+
+                    while (c.moveToNext()) {
+                        val name = c.getString(nameIdx)
+                        if (!seenNames.contains(name.lowercase())) {
+                            seenNames.add(name.lowercase())
+                            list.add(
+                                DbOfflinePlace(
+                                    placeId = c.getLong(idIdx),
+                                    regionId = c.getString(regIdx),
+                                    name = name,
+                                    address = c.getString(addrIdx) ?: "",
+                                    latitude = c.getDouble(latIdx),
+                                    longitude = c.getDouble(lonIdx),
+                                    placeType = c.getString(typeIdx) ?: "poi"
+                                )
+                            )
+                        }
+                    }
                 }
             }
         } catch (e: Exception) {

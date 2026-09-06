@@ -65,18 +65,18 @@ class OfflineMapRepository(private val context: Context) {
                 status = "DOWNLOADED"
             )
             db.saveRegion(defaultRegion)
-            generateSampleRoadGraph("pune_region_01", 18.5204, 73.8567)
+            generateSampleRoadGraph("pune_region_01", "Pune Offline Region", 18.5204, 73.8567)
             regions = db.getDownloadedRegions()
         }
 
         _downloadedRegions.value = regions
 
-        val dbNodes = mutableListOf<DbRoadNode>()
+        val dbNodes = db.getAllNodes()
         val dbSegments = db.getAllSegments()
 
         // Load segments into road graph
         roadGraph.loadFromDbData(dbNodes, dbSegments)
-        Log.d(TAG, "Offline graph initialized with ${dbSegments.size} segments.")
+        Log.d(TAG, "Offline graph initialized with ${dbNodes.size} nodes, ${dbSegments.size} segments.")
     }
 
     fun getBestOfflineRegionForLocation(lat: Double, lon: Double): OfflineRegionRecord? {
@@ -87,6 +87,12 @@ class OfflineMapRepository(private val context: Context) {
         }
     }
 
+    fun resetDownloadState() {
+        _isDownloading.value = false
+        _downloadProgress.value = 0
+        _downloadStatusText.value = ""
+    }
+
     suspend fun downloadMapArea(
         name: String,
         centerLat: Double,
@@ -94,57 +100,63 @@ class OfflineMapRepository(private val context: Context) {
         radiusKm: Double
     ) = withContext(Dispatchers.IO) {
         _isDownloading.value = true
-        _downloadProgress.value = 5
-        _downloadStatusText.value = "Initializing download for $name..."
+        try {
+            _downloadProgress.value = 5
+            _downloadStatusText.value = "Initializing download for $name..."
 
-        val regionId = "region_${System.currentTimeMillis()}"
-        val deltaLat = radiusKm / 111.0
-        val deltaLon = radiusKm / (111.0 * cos(Math.toRadians(centerLat)))
+            val regionId = "region_${System.currentTimeMillis()}"
+            val deltaLat = radiusKm / 111.0
+            val deltaLon = radiusKm / (111.0 * cos(Math.toRadians(centerLat)))
 
-        val minLat = centerLat - deltaLat
-        val maxLat = centerLat + deltaLat
-        val minLon = centerLon - deltaLon
-        val maxLon = centerLon + deltaLon
+            val minLat = centerLat - deltaLat
+            val maxLat = centerLat + deltaLat
+            val minLon = centerLon - deltaLon
+            val maxLon = centerLon + deltaLon
 
-        val regionRecord = OfflineRegionRecord(
-            regionId = regionId,
-            name = name,
-            minLat = minLat,
-            minLon = minLon,
-            maxLat = maxLat,
-            maxLon = maxLon,
-            downloadTimeMs = System.currentTimeMillis(),
-            sizeBytes = 0L,
-            status = "DOWNLOADING"
-        )
-        db.saveRegion(regionRecord)
+            val regionRecord = OfflineRegionRecord(
+                regionId = regionId,
+                name = name,
+                minLat = minLat,
+                minLon = minLon,
+                maxLat = maxLat,
+                maxLon = maxLon,
+                downloadTimeMs = System.currentTimeMillis(),
+                sizeBytes = 0L,
+                status = "DOWNLOADING"
+            )
+            db.saveRegion(regionRecord)
 
-        // Asynchronous download simulation steps (Road data, Places, Tiles)
-        _downloadProgress.value = 25
-        _downloadStatusText.value = "Downloading road graph data..."
-        kotlinx.coroutines.delay(600L)
+            // Asynchronous download simulation steps (Road data, Places, Tiles)
+            _downloadProgress.value = 25
+            _downloadStatusText.value = "Downloading road graph data..."
+            kotlinx.coroutines.delay(600L)
 
-        _downloadProgress.value = 55
-        _downloadStatusText.value = "Downloading place labels & POIs..."
-        kotlinx.coroutines.delay(600L)
+            _downloadProgress.value = 55
+            _downloadStatusText.value = "Downloading place labels & POIs..."
+            kotlinx.coroutines.delay(600L)
 
-        _downloadProgress.value = 85
-        _downloadStatusText.value = "Building spatial index..."
-        val estSizeBytes = generateSampleRoadGraph(regionId, centerLat, centerLon)
-        kotlinx.coroutines.delay(400L)
+            _downloadProgress.value = 85
+            _downloadStatusText.value = "Building spatial index..."
+            val estSizeBytes = generateSampleRoadGraph(regionId, name, centerLat, centerLon)
+            kotlinx.coroutines.delay(400L)
 
-        val completedRecord = regionRecord.copy(
-            sizeBytes = estSizeBytes,
-            status = "DOWNLOADED"
-        )
-        db.saveRegion(completedRecord)
+            val completedRecord = regionRecord.copy(
+                sizeBytes = estSizeBytes,
+                status = "DOWNLOADED"
+            )
+            db.saveRegion(completedRecord)
 
-        loadRegionsAndGraph()
+            loadRegionsAndGraph()
 
-        _downloadProgress.value = 100
-        _downloadStatusText.value = "Download Complete ✓"
-        _isDownloading.value = false
-        Log.d(TAG, "OFFLINE_MAP_DOWNLOADED regionId=$regionId name=$name sizeBytes=$estSizeBytes")
+            _downloadProgress.value = 100
+            _downloadStatusText.value = "Download Complete ✓"
+            Log.d(TAG, "OFFLINE_MAP_DOWNLOADED regionId=$regionId name=$name sizeBytes=$estSizeBytes")
+        } catch (e: Exception) {
+            Log.e(TAG, "Error downloading map area $name: ${e.message}", e)
+            _downloadStatusText.value = "Download failed: ${e.message}"
+        } finally {
+            _isDownloading.value = false
+        }
     }
 
     suspend fun deleteRegion(regionId: String) = withContext(Dispatchers.IO) {
@@ -153,13 +165,14 @@ class OfflineMapRepository(private val context: Context) {
         Log.d(TAG, "Deleted region regionId=$regionId")
     }
 
-    private suspend fun generateSampleRoadGraph(regionId: String, centerLat: Double, centerLon: Double): Long {
+    private suspend fun generateSampleRoadGraph(regionId: String, regionName: String, centerLat: Double, centerLon: Double): Long {
         val nodes = mutableListOf<DbRoadNode>()
         val segments = mutableListOf<DbRoadSegment>()
         val places = mutableListOf<DbOfflinePlace>()
 
-        // Generate synthetic grid of road segments & nodes around center lat/lon for offline testing
-        val nodeGrid = Array(5) { r -> Array(5) { c -> (r * 5 + c + 100L) } }
+        // Generate synthetic grid of road segments & nodes around center lat/lon with unique base ID per download
+        val nodeBaseId = (System.currentTimeMillis() % 100000L) * 100L
+        val nodeGrid = Array(5) { r -> Array(5) { c -> (nodeBaseId + r * 5 + c + 1L) } }
 
         for (r in 0 until 5) {
             for (c in 0 until 5) {
@@ -170,8 +183,17 @@ class OfflineMapRepository(private val context: Context) {
             }
         }
 
-        var segCounter = 1000L
-        val roadNames = arrayOf("NH 48", "Main Street", "Station Road", "FC Road", "JM Road", "University Road", "Airport Road")
+        var segCounter = nodeBaseId + 1000L
+        val cleanName = regionName.replace("Offline Region", "").replace("Selected Area", "").trim().ifEmpty { "Area" }
+        val roadNames = arrayOf(
+            "$cleanName Main Highway",
+            "$cleanName Station Road",
+            "$cleanName Ring Road",
+            "$cleanName Central Avenue",
+            "$cleanName Commercial Street",
+            "$cleanName Express Link",
+            "NH 48"
+        )
         val roadTypes = arrayOf("motorway", "primary", "secondary", "tertiary", "residential")
 
         // Create horizontal segments
@@ -249,35 +271,58 @@ class OfflineMapRepository(private val context: Context) {
             }
         }
 
-        // Add diverse landmark places across categories for rich Google Maps feel
-        places.add(DbOfflinePlace(1, regionId, "Pune Railway Station", "Agarkar Nagar, Pune", centerLat + 0.008, centerLon + 0.012, "transit"))
-        places.add(DbOfflinePlace(2, regionId, "Pune International Airport", "Lohegaon, Pune", centerLat + 0.035, centerLon + 0.030, "transit"))
-        places.add(DbOfflinePlace(3, regionId, "Swargate Bus Terminal", "Swargate, Pune", centerLat - 0.015, centerLon + 0.002, "transit"))
-        places.add(DbOfflinePlace(4, regionId, "Shivajinagar Metro Station", "Shivajinagar, Pune", centerLat + 0.005, centerLon - 0.008, "transit"))
+        // Generate tailored landmark places across categories specifically for this downloaded region
+        var pId = System.currentTimeMillis() % 100000L
 
-        places.add(DbOfflinePlace(5, regionId, "Sassoon General Hospital", "Station Road, Pune", centerLat + 0.007, centerLon + 0.014, "hospital"))
-        places.add(DbOfflinePlace(6, regionId, "KEM Hospital", "Rasta Peth, Pune", centerLat + 0.002, centerLon + 0.015, "hospital"))
-        places.add(DbOfflinePlace(7, regionId, "Ruby Hall Clinic", "Bund Garden Road, Pune", centerLat + 0.015, centerLon + 0.018, "hospital"))
-        places.add(DbOfflinePlace(8, regionId, "Poona Hospital & Research Centre", "Sadashiv Peth, Pune", centerLat - 0.006, centerLon - 0.009, "hospital"))
+        // Primary Center & Transit Hubs
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Center", "Central District, $cleanName", centerLat, centerLon, "landmark"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Central Station", "Station Road, $cleanName", centerLat + 0.008, centerLon + 0.012, "transit"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Metro Station", "Metro Line, $cleanName", centerLat + 0.005, centerLon - 0.008, "transit"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Bus Terminal", "Terminal Road, $cleanName", centerLat - 0.015, centerLon + 0.002, "transit"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Airport", "Airport Road, $cleanName", centerLat + 0.035, centerLon + 0.030, "transit"))
 
-        places.add(DbOfflinePlace(9, regionId, "HP AutoCare Fuel Station", "Station Road, Pune", centerLat + 0.004, centerLon + 0.005, "fuel"))
-        places.add(DbOfflinePlace(10, regionId, "Shell Petrol Pump", "Senapati Bapat Road, Pune", centerLat + 0.012, centerLon - 0.018, "fuel"))
-        places.add(DbOfflinePlace(11, regionId, "Indian Oil EV Charging & Petrol", "Shivajinagar, Pune", centerLat + 0.003, centerLon - 0.004, "fuel"))
-        places.add(DbOfflinePlace(12, regionId, "Bharat Petroleum Pump", "FC Road, Pune", centerLat - 0.004, centerLon - 0.012, "fuel"))
+        // Hospitals & Medical
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName General Hospital", "Health Avenue, $cleanName", centerLat + 0.007, centerLon + 0.014, "hospital"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Emergency Clinic", "Cross Road, $cleanName", centerLat - 0.006, centerLon - 0.009, "hospital"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Multi-Specialty Hospital", "Ring Road, $cleanName", centerLat + 0.015, centerLon + 0.018, "hospital"))
 
-        places.add(DbOfflinePlace(13, regionId, "Shaniwar Wada", "Bajirao Road, Shaniwar Peth, Pune", centerLat + 0.001, centerLon - 0.002, "landmark"))
-        places.add(DbOfflinePlace(14, regionId, "Aga Khan Palace", "Nagar Road, Kalyani Nagar, Pune", centerLat + 0.028, centerLon + 0.038, "landmark"))
-        places.add(DbOfflinePlace(15, regionId, "Dagdusheth Halwai Ganpati Temple", "Budhwar Peth, Pune", centerLat - 0.002, centerLon + 0.001, "landmark"))
-        places.add(DbOfflinePlace(16, regionId, "Fergusson College", "FC Road, Shivajinagar, Pune", centerLat - 0.008, centerLon - 0.016, "landmark"))
-        places.add(DbOfflinePlace(17, regionId, "Raja Dinkar Kelkar Museum", "Shukrawar Peth, Pune", centerLat - 0.009, centerLon + 0.003, "landmark"))
+        // Fuel & EV Stations
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName HP AutoCare Fuel Station", "Station Road, $cleanName", centerLat + 0.004, centerLon + 0.005, "fuel"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Shell Petrol Pump", "Main Highway, $cleanName", centerLat + 0.012, centerLon - 0.018, "fuel"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Indian Oil EV Charging Hub", "Central Avenue, $cleanName", centerLat + 0.003, centerLon - 0.004, "fuel"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Bharat Petroleum Pump", "Ring Road, $cleanName", centerLat - 0.004, centerLon - 0.012, "fuel"))
 
-        places.add(DbOfflinePlace(18, regionId, "Vaishali Restaurant", "FC Road, Deccan Gymkhana, Pune", centerLat - 0.007, centerLon - 0.015, "food"))
-        places.add(DbOfflinePlace(19, regionId, "Goodluck Cafe", "FC Road, Deccan, Pune", centerLat - 0.005, centerLon - 0.014, "food"))
-        places.add(DbOfflinePlace(20, regionId, "German Bakery", "Koregaon Park, Pune", centerLat + 0.018, centerLon + 0.032, "food"))
-        places.add(DbOfflinePlace(21, regionId, "Kayani Bakery", "East Street, Camp, Pune", centerLat - 0.003, centerLon + 0.022, "food"))
+        // Landmarks & Heritage
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Heritage Monument", "Old City, $cleanName", centerLat + 0.001, centerLon - 0.002, "landmark"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName City Park & Lake", "Lake Road, $cleanName", centerLat - 0.002, centerLon + 0.001, "landmark"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Cultural Center", "Arts Square, $cleanName", centerLat - 0.009, centerLon + 0.003, "landmark"))
 
-        places.add(DbOfflinePlace(22, regionId, "Phoenix Marketcity Mall", "Viman Nagar, Pune", centerLat + 0.032, centerLon + 0.040, "shopping"))
-        places.add(DbOfflinePlace(23, regionId, "The Pavillion Mall", "Senapati Bapat Road, Pune", centerLat + 0.014, centerLon - 0.016, "shopping"))
+        // Food & Dining
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Grand Restaurant", "Food Street, $cleanName", centerLat - 0.007, centerLon - 0.015, "food"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Cafe & Bakery", "Main Market, $cleanName", centerLat - 0.005, centerLon - 0.014, "food"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Food Plaza", "Station Road, $cleanName", centerLat + 0.018, centerLon + 0.032, "food"))
+
+        // Shopping & Markets
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Shopping Mall", "Commercial Street, $cleanName", centerLat + 0.032, centerLon + 0.040, "shopping"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName Central Market", "Market Yard, $cleanName", centerLat + 0.014, centerLon - 0.016, "shopping"))
+
+        // Key road intersections
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName North Junction", "North Highway Cross", centerLat + 0.025, centerLon, "landmark"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName South Junction", "South Highway Cross", centerLat - 0.025, centerLon, "landmark"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName East Junction", "East Bypass Cross", centerLat, centerLon + 0.025, "landmark"))
+        places.add(DbOfflinePlace(pId++, regionId, "$cleanName West Junction", "West Bypass Cross", centerLat, centerLon - 0.025, "landmark"))
+
+        // Also include classic Pune landmarks if in Pune region
+        if (cleanName.contains("pune", ignoreCase = true)) {
+            places.add(DbOfflinePlace(pId++, regionId, "Shaniwar Wada", "Bajirao Road, Shaniwar Peth, Pune", centerLat + 0.001, centerLon - 0.002, "landmark"))
+            places.add(DbOfflinePlace(pId++, regionId, "Aga Khan Palace", "Nagar Road, Kalyani Nagar, Pune", centerLat + 0.028, centerLon + 0.038, "landmark"))
+            places.add(DbOfflinePlace(pId++, regionId, "Dagdusheth Halwai Ganpati Temple", "Budhwar Peth, Pune", centerLat - 0.002, centerLon + 0.001, "landmark"))
+            places.add(DbOfflinePlace(pId++, regionId, "Fergusson College", "FC Road, Shivajinagar, Pune", centerLat - 0.008, centerLon - 0.016, "landmark"))
+            places.add(DbOfflinePlace(pId++, regionId, "Vaishali Restaurant", "FC Road, Deccan Gymkhana, Pune", centerLat - 0.007, centerLon - 0.015, "food"))
+            places.add(DbOfflinePlace(pId++, regionId, "Goodluck Cafe", "FC Road, Deccan, Pune", centerLat - 0.005, centerLon - 0.014, "food"))
+            places.add(DbOfflinePlace(pId++, regionId, "German Bakery", "Koregaon Park, Pune", centerLat + 0.018, centerLon + 0.032, "food"))
+            places.add(DbOfflinePlace(pId++, regionId, "Phoenix Marketcity Mall", "Viman Nagar, Pune", centerLat + 0.032, centerLon + 0.040, "shopping"))
+        }
 
         db.insertRoadGraph(regionId, nodes, segments, places)
         return (segments.size * 500L + places.size * 300L + 25L * 1024L * 1024L) // Estimated size bytes
