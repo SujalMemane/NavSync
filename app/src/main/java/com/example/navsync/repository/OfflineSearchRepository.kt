@@ -39,9 +39,10 @@ class OfflineSearchRepository(context: Context) {
                 address = dbPlace.address,
                 latitude = dbPlace.latitude,
                 longitude = dbPlace.longitude,
-                distanceMeters = dist
+                distanceMeters = dist,
+                placeType = dbPlace.placeType
             )
-        }
+        }.sortedBy { it.distanceMeters ?: Float.MAX_VALUE }
 
         Log.d(TAG, "OFFLINE_SEARCH resultsCount=${results.size}")
         return@withContext results

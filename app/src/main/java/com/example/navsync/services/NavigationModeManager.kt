@@ -143,8 +143,9 @@ class NavigationModeManager(private val context: Context) {
         }
 
         val blackoutDurationMs = if (isLost) (now - gnssLostTimestampMs) else 0L
-        // 5-second blackout threshold rule requested by user
-        val isBlackoutOverThreshold = isLost && (blackoutDurationMs >= 5000L || simulatedGnssLoss)
+        val isHardwareDisabled = (status == GnssStatusState.LOCATION_DISABLED || status == GnssStatusState.NO_PERMISSION)
+        // Immediate switch when GPS is explicitly disabled, otherwise 5-second blackout threshold rule
+        val isBlackoutOverThreshold = isLost && (blackoutDurationMs >= 5000L || simulatedGnssLoss || isHardwareDisabled)
 
         val newLocState = when {
             isBlackoutOverThreshold -> LocationState.GNSS_UNAVAILABLE

@@ -48,13 +48,41 @@ class OfflineSearchProvider(
         if (results.isNotEmpty()) {
             Log.d(TAG, "OFFLINE_SEARCH_SUCCESS query=$query matches=${results.size}")
             return@withContext SearchResultState.Success(results)
-        } else {
-            Log.w(TAG, "OFFLINE_SEARCH_OUTSIDE_BOUNDS query=$query (Not found in downloaded offline dataset)")
-            return@withContext SearchResultState.OutsideMapBounds(
-                query = query,
-                message = "\"$query\" is not included in your downloaded offline map. Connect to the internet or download this area to search and route there."
-            )
         }
+
+        // If specific keyword had no match, but offline regions exist, return all downloaded places
+        val downloadedRegions = offlineMapRepository.downloadedRegions.value.filter { it.status == "DOWNLOADED" }
+        if (downloadedRegions.isNotEmpty()) {
+            val allLandmarks = offlineMapRepository.getAllLandmarks()
+            if (allLandmarks.isNotEmpty()) {
+                val fallbackPlaces = allLandmarks.take(15).map { dbPlace ->
+                    val dist: Float? = if (userLat != null && userLon != null) {
+                        val res = FloatArray(1)
+                        android.location.Location.distanceBetween(userLat, userLon, dbPlace.latitude, dbPlace.longitude, res)
+                        res[0]
+                    } else null
+
+                    PlaceResult(
+                        displayName = "${dbPlace.name}, ${dbPlace.address}",
+                        shortName = dbPlace.name,
+                        address = dbPlace.address,
+                        latitude = dbPlace.latitude,
+                        longitude = dbPlace.longitude,
+                        distanceMeters = dist,
+                        placeType = dbPlace.placeType
+                    )
+                }.sortedBy { it.distanceMeters ?: Float.MAX_VALUE }
+
+                Log.d(TAG, "OFFLINE_SEARCH_FALLBACK_DOWNLOADED matches=${fallbackPlaces.size}")
+                return@withContext SearchResultState.Success(fallbackPlaces)
+            }
+        }
+
+        Log.w(TAG, "OFFLINE_SEARCH_OUTSIDE_BOUNDS query=$query (No offline regions downloaded)")
+        return@withContext SearchResultState.OutsideMapBounds(
+            query = query,
+            message = "No offline map downloaded for \"$query\". Download this area to search and route offline."
+        )
     }
 }
 
@@ -73,7 +101,16 @@ class SearchProviderManager(
 
     override suspend fun searchPlaces(query: String, userLat: Double?, userLon: Double?): SearchResultState {
         return if (navigationModeManager.connectivityState.value == ConnectivityState.ONLINE) {
-            onlineSearchProvider.searchPlaces(query, userLat, userLon)
+            val onlineResult = try {
+                onlineSearchProvider.searchPlaces(query, userLat, userLon)
+            } catch (e: Exception) {
+                SearchResultState.NoResults
+            }
+            if (onlineResult is SearchResultState.Success && onlineResult.results.isNotEmpty()) {
+                onlineResult
+            } else {
+                offlineSearchProvider.searchPlaces(query, userLat, userLon)
+            }
         } else {
             offlineSearchProvider.searchPlaces(query, userLat, userLon)
         }
