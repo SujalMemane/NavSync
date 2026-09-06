@@ -51,6 +51,14 @@ class OfflineRoadGraph {
         }
 
         dbSegments.forEach { seg ->
+            // Ensure endpoint nodes exist in nodesMap even if omitted from dbNodes
+            if (!nodesMap.containsKey(seg.fromNodeId)) {
+                nodesMap[seg.fromNodeId] = RoadNode(seg.fromNodeId, seg.startLat, seg.startLon)
+            }
+            if (!nodesMap.containsKey(seg.toNodeId)) {
+                nodesMap[seg.toNodeId] = RoadNode(seg.toNodeId, seg.endLat, seg.endLon)
+            }
+
             val domainSeg = RoadSegment(
                 segmentId = seg.segmentId,
                 fromNodeId = seg.fromNodeId,
@@ -98,22 +106,28 @@ class OfflineRoadGraph {
 
     fun getOutgoingSegments(nodeId: Long): List<RoadSegment> = adjacencyList[nodeId] ?: emptyList()
 
-    fun getNearestRoadSegment(lat: Double, lon: Double, maxRadiusMeters: Double = 500.0): RoadSegment? {
+    fun getNearestRoadSegment(lat: Double, lon: Double, maxRadiusMeters: Double = 5000.0): RoadSegment? {
         var minDistance = Double.MAX_VALUE
         var nearestSegment: RoadSegment? = null
+        var closestOverall: RoadSegment? = null
+        var minOverallDist = Double.MAX_VALUE
 
-        val results = FloatArray(1)
         for (seg in segmentsMap.values) {
             val distToStart = distanceMeters(lat, lon, seg.startLat, seg.startLon)
             val distToEnd = distanceMeters(lat, lon, seg.endLat, seg.endLon)
             val approxDist = min(distToStart, distToEnd)
+
+            if (approxDist < minOverallDist) {
+                minOverallDist = approxDist
+                closestOverall = seg
+            }
 
             if (approxDist < minDistance && approxDist <= maxRadiusMeters) {
                 minDistance = approxDist
                 nearestSegment = seg
             }
         }
-        return nearestSegment
+        return nearestSegment ?: closestOverall
     }
 
     fun getCandidateRoads(lat: Double, lon: Double, maxRadiusMeters: Double = 300.0): List<RoadSegment> {
@@ -154,8 +168,11 @@ class OfflineRoadGraph {
     }
 
     private fun distanceMeters(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val results = FloatArray(1)
-        Location.distanceBetween(lat1, lon1, lat2, lon2, results)
-        return results[0].toDouble()
+        val r = 6371000.0 // Earth radius in meters
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = sin(dLat / 2).pow(2) + cos(Math.toRadians(lat1)) * cos(Math.toRadians(lat2)) * sin(dLon / 2).pow(2)
+        val c = 2 * atan2(sqrt(a), sqrt(1 - a))
+        return r * c
     }
 }

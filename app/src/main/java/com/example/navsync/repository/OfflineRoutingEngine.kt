@@ -22,21 +22,17 @@ class OfflineRoutingEngine(private val roadGraph: OfflineRoadGraph) {
         destLon: Double,
         destName: String = "Destination"
     ): Result<RouteResult> {
-        val startSegment = roadGraph.getNearestRoadSegment(originLat, originLon, 1000.0)
+        val startSegment = roadGraph.getNearestRoadSegment(originLat, originLon, 5000.0)
             ?: return Result.failure(Exception("Unable to find a nearby road near origin in downloaded map."))
 
-        val destSegment = roadGraph.getNearestRoadSegment(destLat, destLon, 1000.0)
+        val destSegment = roadGraph.getNearestRoadSegment(destLat, destLon, 5000.0)
             ?: return Result.failure(Exception("Unable to find a nearby road near destination in downloaded map."))
 
         val startNodeId = startSegment.fromNodeId
         val targetNodeId = destSegment.toNodeId
 
-        val startNode = roadGraph.getNode(startNodeId)
-        val targetNode = roadGraph.getNode(targetNodeId)
-
-        if (startNode == null || targetNode == null) {
-            return Result.failure(Exception("Invalid road graph nodes for routing."))
-        }
+        val startNode = roadGraph.getNode(startNodeId) ?: RoadNode(startNodeId, startSegment.startLat, startSegment.startLon)
+        val targetNode = roadGraph.getNode(targetNodeId) ?: RoadNode(targetNodeId, destSegment.endLat, destSegment.endLon)
 
         // A* Shortest-Path Algorithm
         val gScore = mutableMapOf<Long, Double>().withDefault { Double.MAX_VALUE }
@@ -153,8 +149,11 @@ class OfflineRoutingEngine(private val roadGraph: OfflineRoadGraph) {
     }
 
     private fun heuristic(lat1: Double, lon1: Double, lat2: Double, lon2: Double): Double {
-        val results = FloatArray(1)
-        Location.distanceBetween(lat1, lon1, lat2, lon2, results)
-        return results[0].toDouble()
+        val r = 6371000.0 // Earth radius in meters
+        val dLat = Math.toRadians(lat2 - lat1)
+        val dLon = Math.toRadians(lon2 - lon1)
+        val a = Math.sin(dLat / 2).let { it * it } + Math.cos(Math.toRadians(lat1)) * Math.cos(Math.toRadians(lat2)) * Math.sin(dLon / 2).let { it * it }
+        val c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
+        return r * c
     }
 }
