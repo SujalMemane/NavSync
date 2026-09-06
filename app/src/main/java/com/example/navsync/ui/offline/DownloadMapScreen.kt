@@ -34,6 +34,8 @@ import androidx.compose.ui.viewinterop.AndroidView
 import com.example.navsync.repository.OfflineMapRepository
 import com.example.navsync.ui.home.HomeViewModel
 import com.example.navsync.ui.theme.*
+import android.util.Log
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.osmdroid.events.MapListener
 import org.osmdroid.events.ScrollEvent
@@ -58,7 +60,9 @@ fun DownloadMapScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var regionNameInput by remember { mutableStateOf("Pune Selected Area") }
+    var regionNameInput by remember { mutableStateOf("Offline Map Area") }
+    var hasUserManuallyEditedName by remember { mutableStateOf(false) }
+    var isDetectingLocationName by remember { mutableStateOf(false) }
 
     // MapView reference for direct zooming and viewport center extraction
     var mapViewRef by remember { mutableStateOf<MapView?>(null) }
@@ -71,6 +75,29 @@ fun DownloadMapScreen(
     val initialLat = remember { if (uiState.hasPosition) uiState.latitude else 18.5204 }
     val initialLon = remember { if (uiState.hasPosition) uiState.longitude else 73.8567 }
     var zoomLevel by remember { mutableStateOf(13.0) }
+    var mapCenterCoord by remember { mutableStateOf(GeoPoint(initialLat, initialLon)) }
+
+    // Automatically detect and update region name as the user pans the viewfinder
+    LaunchedEffect(mapCenterCoord) {
+        if (hasUserManuallyEditedName) return@LaunchedEffect
+        delay(700L)
+        try {
+            isDetectingLocationName = true
+            val address = homeViewModel.geocodingProvider.reverseGeocode(mapCenterCoord.latitude, mapCenterCoord.longitude)
+            if (!hasUserManuallyEditedName && address.isNotBlank()) {
+                val parts = address.split(",").map { it.trim() }.filter { it.isNotEmpty() }
+                val detectedLocality = parts.firstOrNull { part ->
+                    part.length in 3..25 && !part.all { char -> char.isDigit() }
+                } ?: parts.firstOrNull() ?: "Selected Area"
+
+                regionNameInput = "$detectedLocality Offline Map"
+            }
+        } catch (e: Exception) {
+            Log.e("NAVSYNC_DOWNLOAD", "Auto reverse-geocode error: ${e.message}")
+        } finally {
+            isDetectingLocationName = false
+        }
+    }
 
     // Calculate approximate area dimensions & file size based on zoom & viewport bounding box
     val approxWidthKm = (40000.0 / Math.pow(2.0, zoomLevel)) * 3.5
@@ -115,11 +142,13 @@ fun DownloadMapScreen(
 
                         addMapListener(object : MapListener {
                             override fun onScroll(event: ScrollEvent?): Boolean {
-                                return false // Avoid high-frequency recomposition while panning
+                                mapCenterCoord = GeoPoint(mapCenter.latitude, mapCenter.longitude)
+                                return false
                             }
 
                             override fun onZoom(event: ZoomEvent?): Boolean {
                                 zoomLevel = zoomLevelDouble
+                                mapCenterCoord = GeoPoint(mapCenter.latitude, mapCenter.longitude)
                                 return false
                             }
                         })
@@ -279,9 +308,12 @@ fun DownloadMapScreen(
                     Spacer(modifier = Modifier.width(10.dp))
                     OutlinedTextField(
                         value = regionNameInput,
-                        onValueChange = { regionNameInput = it },
+                        onValueChange = {
+                            regionNameInput = it
+                            hasUserManuallyEditedName = true
+                        },
                         singleLine = true,
-                        placeholder = { Text("Region Name", color = TextMuted) },
+                        placeholder = { Text(if (isDetectingLocationName) "Detecting location..." else "Region Name", color = TextMuted) },
                         colors = OutlinedTextFieldDefaults.colors(
                             focusedBorderColor = NeonGreen,
                             unfocusedBorderColor = BorderDark,
@@ -379,7 +411,8 @@ fun DownloadMapScreen(
                                     Spacer(modifier = Modifier.width(10.dp))
                                     Column {
                                         Text("Area Downloaded Successfully!", color = NeonGreen, fontWeight = FontWeight.Bold, fontSize = 14.sp)
-                                        Text("Ready for offline search, routing & navigation", color = TextSecondary, fontSize = 12.sp)
+                                        Text("All nodes, road segments & POIs dumped to Logcat", color = TextPrimary, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Text("Logcat Tag: NAVSYNC_OFFLINE_MAP", color = NeonGreen, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
                                     }
                                 }
                             }
@@ -400,36 +433,50 @@ fun DownloadMapScreen(
                             onClick = {
                                 scope.launch {
                                     try {
-                                        // Extract precise center and zoom directly from the live map view
-                                        val centerCandidate = mapViewRef?.mapCenter
-                                        val centerLat = if (centerCandidate != null && centerCandidate.latitude != 0.0) {
-                                            centerCandidate.latitude
-                                        } else if (uiState.hasPosition) {
-                                            uiState.latitude
-                                        } else {
-                                            initialLat
-                                        }
-                                        val centerLon = if (centerCandidate != null && centerCandidate.longitude != 0.0) {
-                                            centerCandidate.longitude
-                                        } else if (uiState.hasPosition) {
-                                            uiState.longitude
-                                        } else {
-                                            initialLon
-                                        }
-
-                                        val currentZoom = mapViewRef?.zoomLevelDouble?.takeIf { it > 0.0 } ?: zoomLevel
-                                        val radiusKm = ((40000.0 / Math.pow(2.0, currentZoom)) * 1.6).coerceIn(2.0, 45.0)
-
                                         val name = regionNameInput.trim().ifEmpty { "Selected Offline Area" }
-                                        offlineRepository.downloadMapArea(
-                                            name = name,
-                                            centerLat = centerLat,
-                                            centerLon = centerLon,
-                                            radiusKm = radiusKm
-                                        )
+                                        val map = mapViewRef
+                                        val proj = map?.projection
+
+                                        if (map != null && proj != null && map.width > 0 && map.height > 0) {
+                                            // Compute the EXACT geographic coordinates matching the on-screen green viewfinder frame
+                                            val boxWidth = map.width * 0.84f
+                                            val boxHeight = map.height * 0.52f
+                                            val left = (map.width - boxWidth) / 2f
+                                            val density = context.resources.displayMetrics.density
+                                            val top = (map.height - boxHeight) / 2f - 20f * density
+                                            val right = left + boxWidth
+                                            val bottom = top + boxHeight
+
+                                            val nwPoint = proj.fromPixels(left.toInt(), top.toInt())
+                                            val sePoint = proj.fromPixels(right.toInt(), bottom.toInt())
+
+                                            val maxLat = maxOf(nwPoint.latitude, sePoint.latitude)
+                                            val minLat = minOf(nwPoint.latitude, sePoint.latitude)
+                                            val maxLon = maxOf(nwPoint.longitude, sePoint.longitude)
+                                            val minLon = minOf(nwPoint.longitude, sePoint.longitude)
+
+                                            offlineRepository.downloadMapArea(
+                                                name = name,
+                                                minLat = minLat,
+                                                minLon = minLon,
+                                                maxLat = maxLat,
+                                                maxLon = maxLon
+                                            )
+                                        } else {
+                                            val centerCandidate = map?.mapCenter
+                                            val centerLat = if (centerCandidate != null && centerCandidate.latitude != 0.0) centerCandidate.latitude else initialLat
+                                            val centerLon = if (centerCandidate != null && centerCandidate.longitude != 0.0) centerCandidate.longitude else initialLon
+                                            val currentZoom = map?.zoomLevelDouble?.takeIf { it > 0.0 } ?: zoomLevel
+                                            val radiusKm = ((40000.0 / Math.pow(2.0, currentZoom)) * 1.6).coerceIn(2.0, 45.0)
+
+                                            offlineRepository.downloadMapArea(
+                                                name = name,
+                                                centerLat = centerLat,
+                                                centerLon = centerLon,
+                                                radiusKm = radiusKm
+                                            )
+                                        }
                                         downloadFinished = true
-                                        kotlinx.coroutines.delay(1200L)
-                                        onBack()
                                     } catch (e: Exception) {
                                         android.util.Log.e("DownloadMapScreen", "Download error: ${e.message}", e)
                                     }

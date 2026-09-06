@@ -186,6 +186,9 @@ fun OfflineMapsScreen(
                                 homeViewModel.focusOnRegionBounds(region.minLat, region.minLon, region.maxLat, region.maxLon)
                                 onNavigateTab("dashboard")
                             },
+                            onInspectPoints = {
+                                offlineRepository.dumpPointsToLogcat(region.regionId)
+                            },
                             onDelete = {
                                 scope.launch {
                                     try {
@@ -207,6 +210,7 @@ fun OfflineMapsScreen(
 fun DownloadedRegionCard(
     region: OfflineRegionRecord,
     onViewMap: () -> Unit,
+    onInspectPoints: () -> Unit = {},
     onDelete: () -> Unit
 ) {
     val dateFormat = SimpleDateFormat("MMM dd, yyyy", Locale.US)
@@ -244,6 +248,15 @@ fun DownloadedRegionCard(
             }
 
             Row(verticalAlignment = Alignment.CenterVertically) {
+                IconButton(
+                    onClick = onInspectPoints,
+                    modifier = Modifier.size(36.dp)
+                ) {
+                    Icon(Icons.Default.BugReport, contentDescription = "Dump Points to Logcat", tint = NeonGreen, modifier = Modifier.size(18.dp))
+                }
+
+                Spacer(modifier = Modifier.width(4.dp))
+
                 OutlinedButton(
                     onClick = onViewMap,
                     shape = RoundedCornerShape(12.dp),
@@ -252,7 +265,7 @@ fun DownloadedRegionCard(
                         containerColor = DarkGreenBg,
                         contentColor = NeonGreen
                     ),
-                    contentPadding = PaddingValues(horizontal = 12.dp, vertical = 6.dp),
+                    contentPadding = PaddingValues(horizontal = 10.dp, vertical = 6.dp),
                     modifier = Modifier.height(34.dp)
                 ) {
                     Icon(Icons.Default.Map, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(14.dp))

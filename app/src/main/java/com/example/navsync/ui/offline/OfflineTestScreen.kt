@@ -10,6 +10,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.BugReport
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
@@ -26,6 +27,7 @@ import com.example.navsync.services.ConnectivityState
 import com.example.navsync.services.LocationState
 import com.example.navsync.services.NavigationModeManager
 import com.example.navsync.ui.theme.*
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -38,6 +40,12 @@ fun OfflineTestScreen(
     val locationState by navigationModeManager.locationState.collectAsState()
     val navigationMode by navigationModeManager.navigationMode.collectAsState()
     val downloadedRegions by offlineRepository.downloadedRegions.collectAsState()
+    val isDownloading by offlineRepository.isDownloading.collectAsState()
+    val downloadProgress by offlineRepository.downloadProgress.collectAsState()
+    val downloadStatusText by offlineRepository.downloadStatusText.collectAsState()
+
+    val scope = rememberCoroutineScope()
+    var logcatDumpStatus by remember { mutableStateOf<String?>(null) }
 
     var isSimulatedOffline by remember { mutableStateOf(false) }
     var isSimulatedGnssLoss by remember { mutableStateOf(false) }
@@ -99,6 +107,125 @@ fun OfflineTestScreen(
                         TestStatusRow("Offline Search Engine", if (hasMapDownloaded) "PASS (Local SQLite)" else "FAIL (No Map)", hasMapDownloaded)
                         TestStatusRow("Offline A* Routing Engine", if (hasMapDownloaded) "PASS (Local Graph)" else "FAIL (No Graph)", hasMapDownloaded)
                         TestStatusRow("Zero Network Guarantee", if (connectivityState == ConnectivityState.OFFLINE) "ENFORCED (NetworkGuard Active)" else "ONLINE MODE", true)
+                    }
+                }
+            }
+
+            // Offline Map & Points Inspector Card
+            item {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                    shape = RoundedCornerShape(14.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .border(1.dp, BorderDark, RoundedCornerShape(14.dp))
+                ) {
+                    Column(
+                        modifier = Modifier.padding(16.dp),
+                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                    ) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Box(
+                                modifier = Modifier
+                                    .size(36.dp)
+                                    .clip(CircleShape)
+                                    .background(DarkGreenBg)
+                                    .border(1.dp, BorderGreenSubtle, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Download, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(20.dp))
+                            }
+                            Spacer(modifier = Modifier.width(12.dp))
+                            Column {
+                                Text("OFFLINE MAP & POINTS INSPECTOR", color = TextPrimary, fontSize = 13.sp, fontWeight = FontWeight.Bold)
+                                Text("Filter tag: NAVSYNC_OFFLINE_MAP", color = NeonGreen, fontSize = 11.sp, fontFamily = FontFamily.Monospace)
+                            }
+                        }
+
+                        TestStatusRow("Loaded Road Nodes", "${offlineRepository.roadGraph.totalNodes} points", offlineRepository.roadGraph.totalNodes > 0)
+                        TestStatusRow("Loaded Road Segments", "${offlineRepository.roadGraph.totalSegments} segments", offlineRepository.roadGraph.totalSegments > 0)
+                        TestStatusRow("Directed Graph Edges", "${offlineRepository.roadGraph.totalDirectedEdges} edges", offlineRepository.roadGraph.totalDirectedEdges > 0)
+                        TestStatusRow("Active Regions", "${downloadedRegions.size} region(s)", downloadedRegions.isNotEmpty())
+
+                        if (isDownloading) {
+                            Column {
+                                Row(
+                                    modifier = Modifier.fillMaxWidth(),
+                                    horizontalArrangement = Arrangement.SpaceBetween,
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    Text(downloadStatusText, color = TextPrimary, fontSize = 12.sp)
+                                    Text("$downloadProgress%", color = NeonGreen, fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.height(6.dp))
+                                LinearProgressIndicator(
+                                    progress = { downloadProgress / 100f },
+                                    color = NeonGreen,
+                                    trackColor = DarkGreenBg,
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .height(6.dp)
+                                        .clip(RoundedCornerShape(3.dp))
+                                )
+                            }
+                        }
+
+                        if (logcatDumpStatus != null) {
+                            Text(
+                                text = logcatDumpStatus ?: "",
+                                color = NeonGreen,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.SemiBold
+                            )
+                        }
+
+                        // Button 1: Dump All Points to Logcat
+                        Button(
+                            onClick = {
+                                offlineRepository.dumpPointsToLogcat()
+                                logcatDumpStatus = "✓ Dumped ${offlineRepository.roadGraph.totalNodes} nodes & ${offlineRepository.roadGraph.totalSegments} segments to Logcat (Tag: NAVSYNC_OFFLINE_MAP)"
+                            },
+                            enabled = !isDownloading,
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = TextDark),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                        ) {
+                            Icon(Icons.Default.BugReport, contentDescription = null, tint = TextDark, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("DUMP ALL POINTS TO LOGCAT", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = TextDark)
+                        }
+
+                        // Button 2: Test Download Sample Map
+                        OutlinedButton(
+                            onClick = {
+                                scope.launch {
+                                    logcatDumpStatus = "Downloading test map area..."
+                                    offlineRepository.downloadMapArea(
+                                        name = "Test Map Area",
+                                        centerLat = 18.5204,
+                                        centerLon = 73.8567,
+                                        radiusKm = 4.0
+                                    )
+                                    logcatDumpStatus = "✓ Downloaded and dumped all points to Logcat! (Tag: NAVSYNC_OFFLINE_MAP)"
+                                }
+                            },
+                            enabled = !isDownloading,
+                            shape = RoundedCornerShape(12.dp),
+                            border = BorderStroke(1.dp, BorderGreenSubtle),
+                            colors = ButtonDefaults.outlinedButtonColors(
+                                containerColor = DarkElevated,
+                                contentColor = NeonGreen
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(46.dp)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("TEST DOWNLOAD SAMPLE MAP NOW", fontWeight = FontWeight.Bold, fontSize = 13.sp, color = NeonGreen)
+                        }
                     }
                 }
             }

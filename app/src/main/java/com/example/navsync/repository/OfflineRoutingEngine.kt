@@ -101,19 +101,43 @@ class OfflineRoutingEngine(private val roadGraph: OfflineRoadGraph) {
         val fullGeometry = mutableListOf<LocationPoint>()
         var totalDistMeters = 0.0
 
+        // Ensure polyline begins at exact origin coordinate
+        fullGeometry.add(LocationPoint(originLat, originLon))
+
+        val startConnectorDist = FloatArray(1).also {
+            android.location.Location.distanceBetween(originLat, originLon, pathSegments.first().startLat, pathSegments.first().startLon, it)
+        }[0].toDouble()
+
+        val endConnectorDist = FloatArray(1).also {
+            android.location.Location.distanceBetween(pathSegments.last().endLat, pathSegments.last().endLon, destLat, destLon, it)
+        }[0].toDouble()
+
         pathSegments.forEach { seg ->
             fullGeometry.addAll(seg.geometry)
             totalDistMeters += seg.lengthMeters
         }
 
+        // Ensure polyline terminates at exact destination coordinate
+        fullGeometry.add(LocationPoint(destLat, destLon))
+        totalDistMeters += startConnectorDist + endConnectorDist
+
         val durationSeconds = Math.round(totalDistMeters / 13.88).coerceAtLeast(10L) // ~50 km/h average speed
 
         val steps = mutableListOf<RouteStep>()
         pathSegments.forEachIndexed { idx, seg ->
-            val maneuver = if (idx == 0) ManeuverType.DEPART else if (idx == pathSegments.size - 1) ManeuverType.ARRIVE else ManeuverType.STRAIGHT
+            val isFirst = (idx == 0)
+            val isLast = (idx == pathSegments.size - 1)
+            val maneuver = if (isFirst) ManeuverType.DEPART else if (isLast) ManeuverType.ARRIVE else ManeuverType.STRAIGHT
+            val instruction = when {
+                isFirst && isLast -> "Head towards $destName on ${seg.roadName}"
+                isFirst -> "Depart on ${seg.roadName}"
+                isLast -> "Continue on ${seg.roadName} to arrive at $destName"
+                else -> "Continue on ${seg.roadName}"
+            }
+
             steps.add(
                 RouteStep(
-                    instruction = if (idx == 0) "Depart on ${seg.roadName}" else "Continue on ${seg.roadName}",
+                    instruction = instruction,
                     maneuverType = maneuver,
                     roadName = seg.roadName,
                     distanceMeters = seg.lengthMeters,

@@ -450,16 +450,33 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _searchResultState.value = SearchResultState.NoResults
         _searchQuery.value = place.shortName
 
+        val isOffline = (navigationModeManager.connectivityState.value == ConnectivityState.OFFLINE)
+        val userCovered = if (_uiState.value.hasValidFix) {
+            offlineMapRepository.getBestOfflineRegionForLocation(_uiState.value.latitude, _uiState.value.longitude) != null
+        } else false
+
         val currentLat: Double
         val currentLon: Double
-        if (_uiState.value.hasValidFix) {
+        if (_uiState.value.hasValidFix && (!isOffline || userCovered)) {
             currentLat = _uiState.value.latitude
             currentLon = _uiState.value.longitude
         } else {
-            val reg = _activeOfflineRegion.value ?: offlineMapRepository.downloadedRegions.value.firstOrNull()
+            val reg = offlineMapRepository.getBestOfflineRegionForLocation(place.latitude, place.longitude)
+                ?: _activeOfflineRegion.value
+                ?: offlineMapRepository.downloadedRegions.value.firstOrNull()
+
             if (reg != null) {
-                currentLat = (reg.minLat + reg.maxLat) / 2.0
-                currentLon = (reg.minLon + reg.maxLon) / 2.0
+                val regCenterLat = (reg.minLat + reg.maxLat) / 2.0
+                val regCenterLon = (reg.minLon + reg.maxLon) / 2.0
+                val dist = FloatArray(1)
+                android.location.Location.distanceBetween(regCenterLat, regCenterLon, place.latitude, place.longitude, dist)
+                if (dist[0] < 400f) {
+                    currentLat = reg.minLat + (reg.maxLat - reg.minLat) * 0.20
+                    currentLon = reg.minLon + (reg.maxLon - reg.minLon) * 0.20
+                } else {
+                    currentLat = regCenterLat
+                    currentLon = regCenterLon
+                }
             } else {
                 currentLat = 18.5204
                 currentLon = 73.8567
@@ -479,14 +496,19 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun startNavigation() {
         activeSessionStartTimeMs = System.currentTimeMillis()
         val activeRoute = navigationEngine.engineState.value.activeRoute
-        if (activeRoute != null && !_uiState.value.hasValidFix) {
-            // When starting navigation without a valid GPS fix (GPS off / indoor / offline),
+        val isOffline = (navigationModeManager.connectivityState.value == ConnectivityState.OFFLINE)
+        val userCovered = if (_uiState.value.hasValidFix) {
+            offlineMapRepository.getBestOfflineRegionForLocation(_uiState.value.latitude, _uiState.value.longitude) != null
+        } else false
+
+        if (activeRoute != null && (!_uiState.value.hasValidFix || (isOffline && !userCovered))) {
+            // When starting navigation without a valid GPS fix or when testing offline outside the map,
             // align dead reckoning estimator directly to the route starting point!
             deadReckoningEstimator.syncWithGnss(
                 lat = activeRoute.origin.latitude,
                 lon = activeRoute.origin.longitude,
                 alt = 0.0,
-                bearing = 0f,
+                bearing = activeRoute.steps.firstOrNull()?.let { 0f } ?: 0f,
                 speedMps = 0f
             )
             _uiState.update { current ->

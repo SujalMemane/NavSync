@@ -175,4 +175,10 @@ class OfflineRoadGraph {
         val c = 2 * atan2(sqrt(a), sqrt(1 - a))
         return r * c
     }
+
+    val totalNodes: Int get() = nodesMap.size
+    val totalSegments: Int get() = segmentsMap.size
+    val totalDirectedEdges: Int get() = adjacencyList.values.sumOf { it.size }
+    fun getAllNodes(): List<RoadNode> = nodesMap.values.toList()
+    fun getAllSegments(): List<RoadSegment> = segmentsMap.values.toList()
 }

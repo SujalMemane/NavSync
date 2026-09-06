@@ -460,7 +460,7 @@ fun HomeScreen(
                                     letterSpacing = 0.5.sp
                                 )
                                 Text(
-                                    text = "Blue boundary shows available offline area",
+                                    text = "Green boundary shows exact downloaded offline map area",
                                     color = textMuted,
                                     fontSize = 12.sp
                                 )
@@ -597,6 +597,29 @@ fun HomeScreen(
                                     Spacer(modifier = Modifier.width(6.dp))
                                     Text("OPEN OFFLINE MAPS", color = TextDark, fontSize = 11.sp, fontWeight = FontWeight.Bold)
                                 }
+                            }
+                        }
+                    } else if (searchState is com.example.navsync.services.SearchResultState.NoResults && searchQuery.isNotBlank() && !isSearching) {
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Card(
+                            colors = CardDefaults.cardColors(containerColor = cardBg),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .border(1.dp, borderDark, RoundedCornerShape(12.dp))
+                        ) {
+                            Column(modifier = Modifier.padding(16.dp)) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Icon(Icons.Default.Info, contentDescription = null, tint = textMuted, modifier = Modifier.size(18.dp))
+                                    Spacer(modifier = Modifier.width(8.dp))
+                                    Text("NO OFFLINE MATCHES", color = textMuted, fontWeight = FontWeight.Bold, fontSize = 12.sp)
+                                }
+                                Spacer(modifier = Modifier.height(4.dp))
+                                Text(
+                                    text = "No offline places or roads found for \"$searchQuery\". Try checking the spelling or searching for a road/landmark within your downloaded region.",
+                                    color = textMuted,
+                                    fontSize = 12.sp
+                                )
                             }
                         }
                     }

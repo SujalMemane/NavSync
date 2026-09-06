@@ -50,38 +50,18 @@ class OfflineSearchProvider(
             return@withContext SearchResultState.Success(results)
         }
 
-        // If specific keyword had no match, but offline regions exist, return all downloaded places
         val downloadedRegions = offlineMapRepository.downloadedRegions.value.filter { it.status == "DOWNLOADED" }
-        if (downloadedRegions.isNotEmpty()) {
-            val allLandmarks = offlineMapRepository.getAllLandmarks()
-            if (allLandmarks.isNotEmpty()) {
-                val fallbackPlaces = allLandmarks.take(15).map { dbPlace ->
-                    val dist: Float? = if (userLat != null && userLon != null) {
-                        val res = FloatArray(1)
-                        android.location.Location.distanceBetween(userLat, userLon, dbPlace.latitude, dbPlace.longitude, res)
-                        res[0]
-                    } else null
+        Log.w(TAG, "OFFLINE_SEARCH_NO_MATCH query=$query downloadedRegionsCount=${downloadedRegions.size}")
 
-                    PlaceResult(
-                        displayName = "${dbPlace.name}, ${dbPlace.address}",
-                        shortName = dbPlace.name,
-                        address = dbPlace.address,
-                        latitude = dbPlace.latitude,
-                        longitude = dbPlace.longitude,
-                        distanceMeters = dist,
-                        placeType = dbPlace.placeType
-                    )
-                }.sortedBy { it.distanceMeters ?: Float.MAX_VALUE }
-
-                Log.d(TAG, "OFFLINE_SEARCH_FALLBACK_DOWNLOADED matches=${fallbackPlaces.size}")
-                return@withContext SearchResultState.Success(fallbackPlaces)
-            }
+        val message = if (downloadedRegions.isEmpty()) {
+            "No offline maps downloaded. Download your area to search, route, and navigate offline."
+        } else {
+            "No offline places or roads matching \"$query\" found in downloaded maps. Download this area to search and navigate offline."
         }
 
-        Log.w(TAG, "OFFLINE_SEARCH_OUTSIDE_BOUNDS query=$query (No offline regions downloaded)")
         return@withContext SearchResultState.OutsideMapBounds(
             query = query,
-            message = "No offline map downloaded for \"$query\". Download this area to search and route offline."
+            message = message
         )
     }
 }

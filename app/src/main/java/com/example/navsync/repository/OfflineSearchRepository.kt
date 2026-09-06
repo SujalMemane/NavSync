@@ -21,11 +21,11 @@ class OfflineSearchRepository(context: Context) {
         userLon: Double? = null
     ): List<PlaceResult> = withContext(Dispatchers.IO) {
         val queryClean = query.trim()
-        if (queryClean.length < 2) return@withContext emptyList()
+        if (queryClean.isEmpty()) return@withContext emptyList()
 
         Log.d(TAG, "OFFLINE_SEARCH query=$queryClean userLat=$userLat userLon=$userLon (ZERO network requests)")
 
-        val dbPlaces = db.searchOfflinePlaces(queryClean)
+        val dbPlaces = db.searchOfflinePlaces(queryClean, userLat, userLon)
         val results = dbPlaces.map { dbPlace ->
             val dist: Float? = if (userLat != null && userLon != null) {
                 val res = FloatArray(1)
@@ -42,7 +42,7 @@ class OfflineSearchRepository(context: Context) {
                 distanceMeters = dist,
                 placeType = dbPlace.placeType
             )
-        }.sortedBy { it.distanceMeters ?: Float.MAX_VALUE }
+        }
 
         Log.d(TAG, "OFFLINE_SEARCH resultsCount=${results.size}")
         return@withContext results
