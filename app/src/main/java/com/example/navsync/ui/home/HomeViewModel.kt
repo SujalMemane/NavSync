@@ -141,11 +141,20 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
     fun focusOnRegionBounds(minLat: Double, minLon: Double, maxLat: Double, maxLon: Double) {
         val bbox = org.osmdroid.util.BoundingBox(maxLat, maxLon, minLat, minLon)
         _focusedBoundingBox.value = bbox
-        Log.d("NAVSYNC_UI", "focusOnRegionBounds minLat=$minLat minLon=$minLon maxLat=$maxLat maxLon=$maxLon")
+        val matched = offlineMapRepository.downloadedRegions.value.find {
+            it.minLat == minLat && it.minLon == minLon && it.maxLat == maxLat && it.maxLon == maxLon
+        } ?: offlineMapRepository.downloadedRegions.value.firstOrNull { it.status == "DOWNLOADED" }
+        if (matched != null) {
+            _activeOfflineRegion.value = matched
+            _isLocationCoveredOffline.value = true
+        }
+        _uiState.update { it.copy(isMapFollowing = false) }
+        Log.d("NAVSYNC_UI", "focusOnRegionBounds minLat=$minLat minLon=$minLon maxLat=$maxLat maxLon=$maxLon matched=${matched?.name}")
     }
 
     fun clearFocusedBoundingBox() {
         _focusedBoundingBox.value = null
+        _uiState.update { it.copy(isMapFollowing = true) }
     }
 
     fun setMapStyle(style: com.example.navsync.repository.MapStyle) {
@@ -308,6 +317,7 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
                 // Update Offline Region Coverage
                 val region = offlineMapRepository.getBestOfflineRegionForLocation(lat, lon)
+                    ?: offlineMapRepository.downloadedRegions.value.firstOrNull { it.status == "DOWNLOADED" }
                 _activeOfflineRegion.value = region
                 _isLocationCoveredOffline.value = (region != null)
 
@@ -414,10 +424,16 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
             delay(300L) // 300ms debounce
             _isSearching.value = true
 
-            val currentLat = if (_uiState.value.hasValidFix) _uiState.value.latitude else 18.5204
-            val currentLon = if (_uiState.value.hasValidFix) _uiState.value.longitude else 73.8567
+            val searchLat = if (_uiState.value.hasValidFix) _uiState.value.latitude else {
+                val reg = _activeOfflineRegion.value ?: offlineMapRepository.downloadedRegions.value.firstOrNull()
+                if (reg != null) (reg.minLat + reg.maxLat) / 2.0 else 18.5204
+            }
+            val searchLon = if (_uiState.value.hasValidFix) _uiState.value.longitude else {
+                val reg = _activeOfflineRegion.value ?: offlineMapRepository.downloadedRegions.value.firstOrNull()
+                if (reg != null) (reg.minLon + reg.maxLon) / 2.0 else 73.8567
+            }
 
-            val state = searchProviderManager.searchPlaces(query, currentLat, currentLon)
+            val state = searchProviderManager.searchPlaces(query, searchLat, searchLon)
             _searchResultState.value = state
 
             if (state is SearchResultState.Success) {
@@ -434,8 +450,21 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
         _searchResultState.value = SearchResultState.NoResults
         _searchQuery.value = place.shortName
 
-        val currentLat = if (_uiState.value.hasValidFix) _uiState.value.latitude else 18.5204
-        val currentLon = if (_uiState.value.hasValidFix) _uiState.value.longitude else 73.8567
+        val currentLat: Double
+        val currentLon: Double
+        if (_uiState.value.hasValidFix) {
+            currentLat = _uiState.value.latitude
+            currentLon = _uiState.value.longitude
+        } else {
+            val reg = _activeOfflineRegion.value ?: offlineMapRepository.downloadedRegions.value.firstOrNull()
+            if (reg != null) {
+                currentLat = (reg.minLat + reg.maxLat) / 2.0
+                currentLon = (reg.minLon + reg.maxLon) / 2.0
+            } else {
+                currentLat = 18.5204
+                currentLon = 73.8567
+            }
+        }
 
         navigationEngine.requestRouteToDestination(
             destination = place,
@@ -449,6 +478,25 @@ class HomeViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startNavigation() {
         activeSessionStartTimeMs = System.currentTimeMillis()
+        val activeRoute = navigationEngine.engineState.value.activeRoute
+        if (activeRoute != null && !_uiState.value.hasValidFix) {
+            // When starting navigation without a valid GPS fix (GPS off / indoor / offline),
+            // align dead reckoning estimator directly to the route starting point!
+            deadReckoningEstimator.syncWithGnss(
+                lat = activeRoute.origin.latitude,
+                lon = activeRoute.origin.longitude,
+                alt = 0.0,
+                bearing = 0f,
+                speedMps = 0f
+            )
+            _uiState.update { current ->
+                current.copy(
+                    latitude = activeRoute.origin.latitude,
+                    longitude = activeRoute.origin.longitude,
+                    isDeadReckoningActive = true
+                )
+            }
+        }
         navigationEngine.startNavigation()
         setMapFollowing(true)
     }

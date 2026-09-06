@@ -161,81 +161,100 @@ fun HomeScreen(
                     // Clear only dynamic location/route overlays (not base map tiles)
                     map.overlays.removeAll { it is Marker || it is Polygon || it is Polyline }
 
+                    // 1. Draw Focused Bounding Box Overlay (View Downloaded Region)
+                    val focusedBbox = viewModel.focusedBoundingBox.value
+                    if (focusedBbox != null) {
+                        val bboxPoly = Polygon(map).apply {
+                            points = listOf(
+                                GeoPoint(focusedBbox.latNorth, focusedBbox.lonWest),
+                                GeoPoint(focusedBbox.latNorth, focusedBbox.lonEast),
+                                GeoPoint(focusedBbox.latSouth, focusedBbox.lonEast),
+                                GeoPoint(focusedBbox.latSouth, focusedBbox.lonWest),
+                                GeoPoint(focusedBbox.latNorth, focusedBbox.lonWest)
+                            )
+                            fillPaint.color = android.graphics.Color.argb(45, 0, 230, 118)
+                            outlinePaint.color = android.graphics.Color.argb(240, 0, 230, 118)
+                            outlinePaint.strokeWidth = 6.0f
+                        }
+                        map.overlays.add(bboxPoly)
+                    }
+
+                    // 2. Draw Route Polylines
+                    val activeRoute = navEngineState.activeRoute
+                    val alternativeRoutes = navEngineState.alternativeRoutes
+
+                    // Draw alternative routes first (Gray)
+                    if (navEngineState.mode == NavigationMode.ROUTE_PREVIEW) {
+                        alternativeRoutes.forEachIndexed { idx, altRoute ->
+                            if (idx != navEngineState.selectedAlternativeIndex) {
+                                val altPolyline = Polyline(map).apply {
+                                    setPoints(altRoute.geometry.map { GeoPoint(it.latitude, it.longitude) })
+                                    outlinePaint.color = android.graphics.Color.argb(180, 100, 116, 139)
+                                    outlinePaint.strokeWidth = 10f
+                                }
+                                map.overlays.add(altPolyline)
+                            }
+                        }
+                    }
+
+                    // Draw active primary route with Google Maps 3D Dual-Layer styling
+                    if (activeRoute != null && activeRoute.geometry.isNotEmpty()) {
+                        val routeGeoPoints = activeRoute.geometry.map { GeoPoint(it.latitude, it.longitude) }
+
+                        // Outer casing / shadow polyline (Deep Navy border for crisp contrast)
+                        val casingPolyline = Polyline(map).apply {
+                            setPoints(routeGeoPoints)
+                            outlinePaint.color = android.graphics.Color.argb(220, 15, 23, 42)
+                            outlinePaint.strokeWidth = 20f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = Paint.Join.ROUND
+                            outlinePaint.isAntiAlias = true
+                        }
+                        map.overlays.add(casingPolyline)
+
+                        // Inner core polyline (Vibrant Electric Blue)
+                        val corePolyline = Polyline(map).apply {
+                            setPoints(routeGeoPoints)
+                            outlinePaint.color = android.graphics.Color.rgb(0, 176, 255)
+                            outlinePaint.strokeWidth = 13f
+                            outlinePaint.strokeCap = Paint.Cap.ROUND
+                            outlinePaint.strokeJoin = Paint.Join.ROUND
+                            outlinePaint.isAntiAlias = true
+                        }
+                        map.overlays.add(corePolyline)
+
+                        // Origin Marker (Start of Route)
+                        if (navEngineState.mode == NavigationMode.ROUTE_PREVIEW) {
+                            val startPoint = routeGeoPoints.firstOrNull()
+                            if (startPoint != null) {
+                                val originMarker = Marker(map).apply {
+                                    position = startPoint
+                                    icon = createOriginPinDrawable(context)
+                                    setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
+                                    infoWindow = null
+                                }
+                                map.overlays.add(originMarker)
+                            }
+                        }
+
+                        // Destination Pin Marker (Google Maps style Red Pin)
+                        val destPoint = GeoPoint(activeRoute.destination.latitude, activeRoute.destination.longitude)
+                        val destMarker = Marker(map).apply {
+                            position = destPoint
+                            icon = createDestinationPinDrawable(context)
+                            title = navEngineState.destinationPlace?.displayName ?: "Destination"
+                            setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
+                            infoWindow = null
+                        }
+                        map.overlays.add(destMarker)
+                    }
+
+                    // 3. Draw User Live Location Marker & Accuracy Circle if position is known
                     if (uiState.hasPosition) {
                         val currentPoint = GeoPoint(uiState.latitude, uiState.longitude)
 
-                        if (uiState.isMapFollowing) {
-                            map.controller.animateTo(currentPoint)
-                        }
-
-                        // Draw Route Polylines
-                        val activeRoute = navEngineState.activeRoute
-                        val alternativeRoutes = navEngineState.alternativeRoutes
-
-                        // Draw alternative routes first (Gray)
-                        if (navEngineState.mode == NavigationMode.ROUTE_PREVIEW) {
-                            alternativeRoutes.forEachIndexed { idx, altRoute ->
-                                if (idx != navEngineState.selectedAlternativeIndex) {
-                                    val altPolyline = Polyline(map).apply {
-                                        setPoints(altRoute.geometry.map { GeoPoint(it.latitude, it.longitude) })
-                                        outlinePaint.color = android.graphics.Color.argb(180, 100, 116, 139)
-                                        outlinePaint.strokeWidth = 10f
-                                    }
-                                    map.overlays.add(altPolyline)
-                                }
-                            }
-                        }
-
-                        // Draw active primary route with Google Maps 3D Dual-Layer styling
-                        if (activeRoute != null && activeRoute.geometry.isNotEmpty()) {
-                            val routeGeoPoints = activeRoute.geometry.map { GeoPoint(it.latitude, it.longitude) }
-
-                            // Outer casing / shadow polyline (Deep Navy border for crisp contrast)
-                            val casingPolyline = Polyline(map).apply {
-                                setPoints(routeGeoPoints)
-                                outlinePaint.color = android.graphics.Color.argb(220, 15, 23, 42)
-                                outlinePaint.strokeWidth = 20f
-                                outlinePaint.strokeCap = Paint.Cap.ROUND
-                                outlinePaint.strokeJoin = Paint.Join.ROUND
-                                outlinePaint.isAntiAlias = true
-                            }
-                            map.overlays.add(casingPolyline)
-
-                            // Inner core polyline (Vibrant Electric Blue)
-                            val corePolyline = Polyline(map).apply {
-                                setPoints(routeGeoPoints)
-                                outlinePaint.color = android.graphics.Color.rgb(0, 176, 255)
-                                outlinePaint.strokeWidth = 13f
-                                outlinePaint.strokeCap = Paint.Cap.ROUND
-                                outlinePaint.strokeJoin = Paint.Join.ROUND
-                                outlinePaint.isAntiAlias = true
-                            }
-                            map.overlays.add(corePolyline)
-
-                            // Origin Marker (Start of Route)
-                            if (navEngineState.mode == NavigationMode.ROUTE_PREVIEW) {
-                                val startPoint = routeGeoPoints.firstOrNull()
-                                if (startPoint != null) {
-                                    val originMarker = Marker(map).apply {
-                                        position = startPoint
-                                        icon = createOriginPinDrawable(context)
-                                        setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_CENTER)
-                                        infoWindow = null
-                                    }
-                                    map.overlays.add(originMarker)
-                                }
-                            }
-
-                            // Destination Pin Marker (Google Maps style Red Pin)
-                            val destPoint = GeoPoint(activeRoute.destination.latitude, activeRoute.destination.longitude)
-                            val destMarker = Marker(map).apply {
-                                position = destPoint
-                                icon = createDestinationPinDrawable(context)
-                                title = navEngineState.destinationPlace?.displayName ?: "Destination"
-                                setAnchor(Marker.ANCHOR_CENTER, Marker.ANCHOR_BOTTOM)
-                                infoWindow = null
-                            }
-                            map.overlays.add(destMarker)
+                        if (uiState.isMapFollowing && focusedBbox == null) {
+                            map.controller.setCenter(currentPoint)
                         }
 
                         // Accuracy Circle
@@ -258,38 +277,19 @@ fun HomeScreen(
                             setOnMarkerClickListener { _, _ -> true }
                         }
                         map.overlays.add(locationMarker)
-
-                        // Focused Bounding Box Overlay (View Downloaded Region)
-                        val focusedBbox = viewModel.focusedBoundingBox.value
-                        if (focusedBbox != null) {
-                            val bboxPoly = Polygon(map).apply {
-                                points = listOf(
-                                    GeoPoint(focusedBbox.latNorth, focusedBbox.lonWest),
-                                    GeoPoint(focusedBbox.latNorth, focusedBbox.lonEast),
-                                    GeoPoint(focusedBbox.latSouth, focusedBbox.lonEast),
-                                    GeoPoint(focusedBbox.latSouth, focusedBbox.lonWest),
-                                    GeoPoint(focusedBbox.latNorth, focusedBbox.lonWest)
-                                )
-                                fillPaint.color = android.graphics.Color.argb(35, 0, 176, 255)
-                                outlinePaint.color = android.graphics.Color.argb(220, 0, 176, 255)
-                                outlinePaint.strokeWidth = 5.0f
-                            }
-                            map.overlays.add(bboxPoly)
-                            map.zoomToBoundingBox(focusedBbox, true, 80)
-                        }
-
-                        map.invalidate()
-                    } else {
-                        map.invalidate()
                     }
+
+                    map.invalidate()
                 }
             )
 
             val connectivityState by viewModel.connectivityState.collectAsState()
             val navigationModeState by viewModel.navigationMode.collectAsState()
             val activeRegion by viewModel.activeOfflineRegion.collectAsState()
+            val downloadedRegions by viewModel.offlineMapRepository.downloadedRegions.collectAsState()
             val isLocationCovered by viewModel.isLocationCoveredOffline.collectAsState()
             val searchState by viewModel.searchResultState.collectAsState()
+            val focusedBbox by viewModel.focusedBoundingBox.collectAsState()
 
             var activePopupType by remember { mutableStateOf<com.example.navsync.services.OfflinePopupType?>(null) }
 
@@ -327,6 +327,39 @@ fun HomeScreen(
                 }
             }
 
+            // Safe Auto-frame for Focused Bounding Box (View Downloaded Region)
+            var lastFramedBboxKey by remember { mutableStateOf<String?>(null) }
+            LaunchedEffect(focusedBbox, mapViewRef) {
+                val bbox = focusedBbox
+                val map = mapViewRef
+                if (bbox != null && map != null) {
+                    val bboxKey = "${bbox.latNorth}_${bbox.lonEast}_${bbox.latSouth}_${bbox.lonWest}"
+                    if (lastFramedBboxKey != bboxKey) {
+                        lastFramedBboxKey = bboxKey
+                        viewModel.setMapFollowing(false)
+                        // Ensure MapView has valid layout dimensions before invoking Osmdroid projection animators
+                        var attempts = 0
+                        while ((map.width <= 0 || map.height <= 0) && attempts < 12) {
+                            kotlinx.coroutines.delay(80L)
+                            attempts++
+                        }
+                        try {
+                            map.zoomToBoundingBox(bbox, true, 90)
+                        } catch (e: Exception) {
+                            Log.e("NAVSYNC_MAP", "Failed to zoomToBoundingBox: ${e.message}")
+                            try {
+                                val centerLat = (bbox.latNorth + bbox.latSouth) / 2.0
+                                val centerLon = (bbox.lonEast + bbox.lonWest) / 2.0
+                                map.controller.setCenter(GeoPoint(centerLat, centerLon))
+                                map.controller.setZoom(13.5)
+                            } catch (ignored: Exception) {}
+                        }
+                    }
+                } else if (bbox == null) {
+                    lastFramedBboxKey = null
+                }
+            }
+
             // MAP LOADING & CONNECTIVITY SUBTLE BADGE (Top Start below search bar)
             Row(
                 modifier = Modifier
@@ -337,20 +370,27 @@ fun HomeScreen(
                     ),
                 horizontalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                if (connectivityState == com.example.navsync.services.ConnectivityState.OFFLINE) {
+                val isOffline = connectivityState == com.example.navsync.services.ConnectivityState.OFFLINE
+                val hasOfflineData = (activeRegion != null || downloadedRegions.isNotEmpty())
+                val regionName = activeRegion?.name ?: downloadedRegions.firstOrNull()?.name
+
+                if (isOffline || hasOfflineData) {
                     Box(
                         modifier = Modifier
                             .clip(RoundedCornerShape(12.dp))
-                            .background(if (activeRegion != null) DarkGreenBg else DarkRedBg)
-                            .border(1.dp, if (activeRegion != null) BorderGreenSubtle else AccentRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .background(if (hasOfflineData) DarkGreenBg else DarkRedBg)
+                            .border(1.dp, if (hasOfflineData) BorderGreenSubtle else AccentRed.copy(alpha = 0.5f), RoundedCornerShape(12.dp))
+                            .clickable { onNavigateTab("offline_maps") }
                             .padding(horizontal = 10.dp, vertical = 5.dp)
                     ) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(if (activeRegion != null) NeonGreen else AccentRed))
+                            Box(modifier = Modifier.size(6.dp).clip(CircleShape).background(if (hasOfflineData) NeonGreen else AccentRed))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                if (activeRegion != null) "OFFLINE MAP READY" else "NO OFFLINE MAP",
-                                color = if (activeRegion != null) NeonGreen else AccentRed,
+                                if (hasOfflineData) {
+                                    if (regionName != null) "OFFLINE: $regionName" else "OFFLINE READY"
+                                } else "NO OFFLINE MAP",
+                                color = if (hasOfflineData) NeonGreen else AccentRed,
                                 fontSize = 10.sp,
                                 fontWeight = FontWeight.Bold,
                                 fontFamily = FontFamily.Monospace
@@ -377,6 +417,71 @@ fun HomeScreen(
             }
 
 
+
+            // FLOATING OFFLINE AREA PREVIEW BANNER
+            if (focusedBbox != null) {
+                Card(
+                    colors = CardDefaults.cardColors(containerColor = cardBg),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier
+                        .align(Alignment.TopCenter)
+                        .padding(top = if (navEngineState.mode == NavigationMode.IDLE || navEngineState.mode == NavigationMode.SEARCHING) 76.dp else 14.dp, start = 14.dp, end = 14.dp)
+                        .fillMaxWidth()
+                        .border(1.dp, borderGreen, RoundedCornerShape(12.dp))
+                ) {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 14.dp, vertical = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Box(
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .clip(CircleShape)
+                                    .background(DarkGreenBg)
+                                    .border(1.dp, borderGreen, CircleShape),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                Icon(Icons.Default.Map, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(16.dp))
+                            }
+                            Spacer(modifier = Modifier.width(10.dp))
+                            Column {
+                                Text(
+                                    text = "PREVIEWING OFFLINE REGION",
+                                    color = NeonGreen,
+                                    fontSize = 11.sp,
+                                    fontWeight = FontWeight.Bold,
+                                    letterSpacing = 0.5.sp
+                                )
+                                Text(
+                                    text = "Blue boundary shows available offline area",
+                                    color = textMuted,
+                                    fontSize = 12.sp
+                                )
+                            }
+                        }
+
+                        Button(
+                            onClick = {
+                                viewModel.clearFocusedBoundingBox()
+                                viewModel.setMapFollowing(true)
+                            },
+                            colors = ButtonDefaults.buttonColors(containerColor = containerBg, contentColor = textPrimary),
+                            shape = RoundedCornerShape(8.dp),
+                            contentPadding = PaddingValues(horizontal = 12.dp, vertical = 4.dp),
+                            modifier = Modifier.height(32.dp)
+                        ) {
+                            Text("Close", fontSize = 12.sp, fontWeight = FontWeight.Bold)
+                        }
+                    }
+                }
+            }
 
             // 2. SEARCH BAR ("WHERE TO?") & AUTOCOMPLETE RESULTS (Top Layer)
             if (navEngineState.mode == NavigationMode.IDLE || navEngineState.mode == NavigationMode.SEARCHING) {
@@ -480,6 +585,18 @@ fun HomeScreen(
                                 }
                                 Spacer(modifier = Modifier.height(4.dp))
                                 Text(outsideState.message, color = TextPrimary, fontSize = 12.sp)
+                                Spacer(modifier = Modifier.height(10.dp))
+                                Button(
+                                    onClick = { onNavigateTab("offline_maps") },
+                                    colors = ButtonDefaults.buttonColors(containerColor = AccentAmber, contentColor = TextDark),
+                                    shape = RoundedCornerShape(10.dp),
+                                    contentPadding = PaddingValues(horizontal = 14.dp, vertical = 6.dp),
+                                    modifier = Modifier.height(34.dp)
+                                ) {
+                                    Icon(Icons.Default.Download, contentDescription = null, tint = TextDark, modifier = Modifier.size(16.dp))
+                                    Spacer(modifier = Modifier.width(6.dp))
+                                    Text("OPEN OFFLINE MAPS", color = TextDark, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                                }
                             }
                         }
                     }
@@ -1234,10 +1351,10 @@ fun NavSyncBottomBar(currentRoute: String, onNavigateTab: (String) -> Unit) {
             )
         )
         NavigationBarItem(
-            selected = currentRoute == "trips",
-            onClick = { onNavigateTab("trips") },
-            icon = { Icon(Icons.Default.Place, contentDescription = "Trips") },
-            label = { Text("Trips", fontWeight = FontWeight.SemiBold) },
+            selected = currentRoute == "offline_maps" || currentRoute == "download_map" || currentRoute == "offline_test",
+            onClick = { onNavigateTab("offline_maps") },
+            icon = { Icon(Icons.Default.Download, contentDescription = "Offline") },
+            label = { Text("Offline", fontWeight = FontWeight.SemiBold) },
             colors = NavigationBarItemDefaults.colors(
                 selectedIconColor = NeonGreen,
                 unselectedIconColor = TextMuted,

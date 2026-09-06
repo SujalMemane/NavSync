@@ -8,6 +8,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.DeleteOutline
 import androidx.compose.material.icons.filled.Navigation
 import androidx.compose.material.icons.filled.Place
@@ -34,7 +35,10 @@ import java.util.Locale
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun TripsScreen(onNavigateTab: (String) -> Unit) {
+fun TripsScreen(
+    onNavigateTab: (String) -> Unit,
+    onBack: () -> Unit = {}
+) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val dbHelper = remember { NavSyncDbHelper(context) }
@@ -59,24 +63,26 @@ fun TripsScreen(onNavigateTab: (String) -> Unit) {
                 )
             },
             confirmButton = {
-                TextButton(
+                Button(
                     onClick = {
-                        showClearDialog = false
                         coroutineScope.launch {
                             dbHelper.clearAllTripSessions()
                             tripsList = emptyList()
                         }
-                    }
+                        showClearDialog = false
+                    },
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentRed, contentColor = TextPrimary),
+                    shape = RoundedCornerShape(8.dp)
                 ) {
-                    Text("Clear All", color = AccentRed, fontWeight = FontWeight.Bold)
+                    Text("Clear All", fontWeight = FontWeight.Bold, fontSize = 13.sp)
                 }
             },
             dismissButton = {
                 TextButton(onClick = { showClearDialog = false }) {
-                    Text("Cancel", color = TextSecondary)
+                    Text("Cancel", color = TextSecondary, fontSize = 13.sp)
                 }
             },
-            containerColor = DarkElevated,
+            containerColor = DarkSurface,
             shape = RoundedCornerShape(12.dp),
             modifier = Modifier.border(1.dp, BorderDark, RoundedCornerShape(12.dp))
         )
@@ -86,6 +92,11 @@ fun TripsScreen(onNavigateTab: (String) -> Unit) {
         topBar = {
             TopAppBar(
                 title = { Text("Trip History", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 20.sp) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
+                    }
+                },
                 actions = {
                     if (tripsList.isNotEmpty()) {
                         IconButton(onClick = { showClearDialog = true }) {
@@ -101,7 +112,7 @@ fun TripsScreen(onNavigateTab: (String) -> Unit) {
             )
         },
         bottomBar = {
-            NavSyncBottomBar(currentRoute = "trips", onNavigateTab = onNavigateTab)
+            NavSyncBottomBar(currentRoute = "settings", onNavigateTab = onNavigateTab)
         },
         containerColor = DarkBg
     ) { innerPadding ->

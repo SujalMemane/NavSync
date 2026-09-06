@@ -72,7 +72,10 @@ class MainActivity : ComponentActivity() {
                         )
                     }
                     "trips" -> {
-                        TripsScreen(onNavigateTab = { route -> currentRoute = route })
+                        TripsScreen(
+                            onNavigateTab = { route -> currentRoute = route },
+                            onBack = { currentRoute = "settings" }
+                        )
                     }
                     "settings" -> {
                         SettingsScreen(
@@ -81,7 +84,8 @@ class MainActivity : ComponentActivity() {
                             onNavigateToNavDiagnostics = { currentRoute = "navigation_diagnostics" },
                             onNavigateToMapDiagnostics = { currentRoute = "map_diagnostics" },
                             onNavigateToOfflineMaps = { currentRoute = "offline_maps" },
-                            onNavigateToOfflineTest = { currentRoute = "offline_test" }
+                            onNavigateToOfflineTest = { currentRoute = "offline_test" },
+                            onNavigateToTrips = { currentRoute = "trips" }
                         )
                     }
                     "offline_maps" -> {
@@ -89,7 +93,7 @@ class MainActivity : ComponentActivity() {
                             homeViewModel = homeViewModel,
                             offlineRepository = homeViewModel.offlineMapRepository,
                             onNavigateToDownload = { currentRoute = "download_map" },
-                            onBack = { currentRoute = "settings" },
+                            onBack = { currentRoute = "home" },
                             onNavigateTab = { route -> currentRoute = route }
                         )
                     }

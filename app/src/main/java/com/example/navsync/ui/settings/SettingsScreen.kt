@@ -14,6 +14,9 @@ import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Map
 import androidx.compose.material.icons.filled.MyLocation
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material.icons.filled.Place
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -34,8 +37,11 @@ fun SettingsScreen(
     onNavigateToNavDiagnostics: () -> Unit,
     onNavigateToMapDiagnostics: () -> Unit = {},
     onNavigateToOfflineMaps: () -> Unit = {},
-    onNavigateToOfflineTest: () -> Unit = {}
+    onNavigateToOfflineTest: () -> Unit = {},
+    onNavigateToTrips: () -> Unit = {}
 ) {
+    val scrollState = rememberScrollState()
+
     Scaffold(
         topBar = {
             TopAppBar(
@@ -52,9 +58,32 @@ fun SettingsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(innerPadding)
+                .verticalScroll(scrollState)
                 .padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            Text(
+                text = "TRIPS & DRIVE HISTORY",
+                color = NeonGreen,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+                letterSpacing = 0.8.sp
+            )
+
+            Card(
+                colors = CardDefaults.cardColors(containerColor = DarkSurface),
+                shape = RoundedCornerShape(12.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .border(1.dp, BorderDark, RoundedCornerShape(12.dp))
+            ) {
+                SettingsRow(
+                    title = "Trip History & Logs",
+                    subtitle = "Saved routes, drive duration & telemetry logs",
+                    icon = Icons.Default.Place,
+                    onClick = onNavigateToTrips
+                )
+            }
             Text(
                 text = "OFFLINE NAVIGATION & MAPS",
                 color = NeonGreen,
