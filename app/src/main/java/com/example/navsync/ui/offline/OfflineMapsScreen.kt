@@ -11,6 +11,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
@@ -58,11 +59,16 @@ fun OfflineMapsScreen(
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back", tint = TextPrimary)
                     }
                 },
+                actions = {
+                    IconButton(onClick = { onNavigateTab("offline_test") }) {
+                        Icon(Icons.Default.BugReport, contentDescription = "Offline Diagnostics", tint = NeonGreen)
+                    }
+                },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = DarkBg)
             )
         },
         bottomBar = {
-            NavSyncBottomBar(currentRoute = "settings", onNavigateTab = onNavigateTab)
+            NavSyncBottomBar(currentRoute = "offline_maps", onNavigateTab = onNavigateTab)
         },
         containerColor = DarkBg
     ) { innerPadding ->
@@ -155,6 +161,17 @@ fun OfflineMapsScreen(
                         Text("No offline maps", color = TextPrimary, fontWeight = FontWeight.Bold, fontSize = 16.sp)
                         Spacer(modifier = Modifier.height(6.dp))
                         Text("Download an area before using offline navigation.", color = TextSecondary, fontSize = 12.sp)
+                        Spacer(modifier = Modifier.height(16.dp))
+                        Button(
+                            onClick = onNavigateToDownload,
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonGreen, contentColor = TextDark),
+                            shape = RoundedCornerShape(12.dp),
+                            modifier = Modifier.height(44.dp)
+                        ) {
+                            Icon(Icons.Default.Download, contentDescription = null, tint = TextDark, modifier = Modifier.size(18.dp))
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Text("DOWNLOAD MAP AREA", color = TextDark, fontWeight = FontWeight.Bold, fontSize = 13.sp)
+                        }
                     }
                 }
             } else {
@@ -171,7 +188,11 @@ fun OfflineMapsScreen(
                             },
                             onDelete = {
                                 scope.launch {
-                                    offlineRepository.deleteRegion(region.regionId)
+                                    try {
+                                        offlineRepository.deleteRegion(region.regionId)
+                                    } catch (e: Exception) {
+                                        android.util.Log.e("OfflineMapsScreen", "Error deleting region: ${e.message}")
+                                    }
                                 }
                             }
                         )
